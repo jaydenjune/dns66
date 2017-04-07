@@ -9,6 +9,7 @@ package org.jak_linux.dns66.db;
 
 import android.content.Context;
 import android.support.annotation.Nullable;
+import android.util.AtomicFile;
 import android.util.Log;
 
 import org.jak_linux.dns66.Configuration;
@@ -19,6 +20,7 @@ import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.FileReader;
 import java.io.IOException;
+import java.io.InputStreamReader;
 import java.io.Reader;
 import java.util.HashSet;
 import java.util.Locale;
@@ -144,9 +146,10 @@ public class RuleDatabase {
         }
 
         if (file != null) {
-            FileReader reader;
+            Reader reader;
+            AtomicFile atomicFile = new AtomicFile(file);
             try {
-                reader = new FileReader(file);
+                reader = new InputStreamReader(atomicFile.openRead());
             } catch (FileNotFoundException e) {
                 e.printStackTrace();
                 return;

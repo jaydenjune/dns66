@@ -9,12 +9,14 @@ package org.jak_linux.dns66;
 
 import android.app.AlertDialog;
 import android.app.DownloadManager;
+import android.app.ProgressDialog;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.net.Uri;
+import android.os.AsyncTask;
 import android.os.Bundle;
 import android.support.v4.content.ContextCompat;
 import android.support.v4.content.LocalBroadcastManager;
@@ -33,6 +35,7 @@ import android.widget.Toast;
 import com.aurelhubert.ahbottomnavigation.AHBottomNavigation;
 import com.aurelhubert.ahbottomnavigation.AHBottomNavigationAdapter;
 
+import org.jak_linux.dns66.db.RuleDatabaseUpdateTask;
 import org.jak_linux.dns66.main.MainFragmentPagerAdapter;
 import org.jak_linux.dns66.main.StartFragment;
 import org.jak_linux.dns66.vpn.AdVpnService;
@@ -182,21 +185,10 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void refresh() {
-        DownloadManager dm = (DownloadManager) getSystemService(DOWNLOAD_SERVICE);
+        final RuleDatabaseUpdateTask task = new RuleDatabaseUpdateTask(this, config);
 
-        for (Configuration.Item item : config.hosts.items) {
-            File file = FileHelper.getItemFile(this, item);
 
-            if (item.isDownloadable() && file != null && item.state != 2) {
-                DownloadManager.Request request = new DownloadManager.Request(Uri.parse(item.location));
-                Log.d("MainActivity", String.format("refresh: Downkoading %s to %s", item.location, file.getAbsolutePath()));
-                file.delete();
-                request.setDestinationUri(Uri.fromFile(file));
-                request.setTitle(item.title);
-                request.setVisibleInDownloadsUi(false);
-                dm.enqueue(request);
-            }
-        }
+        task.execute();
     }
 
     @Override

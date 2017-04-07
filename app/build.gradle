@@ -23,6 +23,11 @@ android {
     }
 }
 
+tasks.withType(JavaCompile) {
+    options.encoding = 'UTF-8'
+    options.compilerArgs << "-Xlint:unchecked" << "-Xlint:deprecation"
+}
+
 dependencies {
     compile fileTree(dir: 'libs', include: ['*.jar'])
     androidTestCompile('com.android.support.test.espresso:espresso-core:2.2.2', {

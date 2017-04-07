@@ -233,7 +233,7 @@ public class Configuration {
         public String location;
         public int state;
 
-        boolean isDownloadable() {
+        public boolean isDownloadable() {
             return location.startsWith("https://") || location.startsWith("http://");
         }
     }
