@@ -7,23 +7,46 @@
  */
 package org.jak_linux.dns66;
 
+import android.app.Activity;
 import android.content.Intent;
+import android.net.Uri;
 import android.os.Bundle;
 import android.support.design.widget.TextInputEditText;
 import android.support.v7.app.AppCompatActivity;
 import android.view.Menu;
 import android.view.MenuItem;
-import android.view.View;
 import android.widget.Spinner;
 import android.widget.Switch;
 
 public class ItemActivity extends AppCompatActivity {
 
 
+    private static final int READ_REQUEST_CODE = 1;
     private TextInputEditText locationText;
     private TextInputEditText titleText;
     private Spinner stateSpinner;
     private Switch stateSwitch;
+
+    public void performFileSearch() {
+        Intent intent = new Intent(Intent.ACTION_GET_CONTENT);
+
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType("*/*");
+
+        startActivityForResult(intent, READ_REQUEST_CODE);
+    }
+
+    @Override
+    public void onActivityResult(int requestCode, int resultCode,
+                                 Intent resultData) {
+        if (requestCode == READ_REQUEST_CODE && resultCode == Activity.RESULT_OK) {
+            Uri uri = null;
+            if (resultData != null) {
+                uri = resultData.getData();
+                locationText.setText(uri.toString());
+            }
+        }
+    }
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -55,6 +78,9 @@ public class ItemActivity extends AppCompatActivity {
     public boolean onCreateOptionsMenu(Menu menu) {
         // Inflate the menu; this adds items to the action bar if it is present.
         getMenuInflater().inflate(R.menu.item, menu);
+        if (getIntent().getIntExtra("STATE_CHOICES", 3) == 2) {
+            menu.findItem(R.id.action_use_file).setVisible(false);
+        }
         return true;
     }
 
@@ -73,6 +99,9 @@ public class ItemActivity extends AppCompatActivity {
                     intent.putExtra("ITEM_STATE", stateSwitch.isChecked() ? 1 : 0);
                 setResult(RESULT_OK, intent);
                 finish();
+                break;
+            case R.id.action_use_file:
+                performFileSearch();
                 break;
         }
 

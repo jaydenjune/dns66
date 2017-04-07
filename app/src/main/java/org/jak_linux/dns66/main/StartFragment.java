@@ -14,6 +14,7 @@ import android.content.Context;
 import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.pm.PackageManager;
+import android.net.Uri;
 import android.net.VpnService;
 import android.os.Bundle;
 import android.support.v4.app.ActivityCompat;
@@ -39,6 +40,7 @@ import org.jak_linux.dns66.vpn.Command;
 
 import java.io.File;
 import java.io.IOException;
+import java.io.InputStreamReader;
 
 import static android.app.Activity.RESULT_CANCELED;
 import static android.app.Activity.RESULT_OK;
@@ -176,13 +178,13 @@ public class StartFragment extends Fragment {
             return true;
 
         for (Configuration.Item item : MainActivity.config.hosts.items) {
-            File file = FileHelper.getItemFile(getContext(), item);
-            if (item.state != Configuration.Item.STATE_IGNORE && file != null) {
+            if (item.state != Configuration.Item.STATE_IGNORE) {
                 try {
-                    if (item.isDownloadable())
-                        new AtomicFile(file).openRead().close();
-                    else if (!file.exists())
-                        return false;
+                    InputStreamReader reader = FileHelper.openItemFile(getContext(), item);
+                    if (reader == null)
+                        continue;
+
+                    reader.close();
                 } catch (IOException e) {
                     return false;
                 }

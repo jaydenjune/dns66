@@ -1,11 +1,13 @@
 package org.jak_linux.dns66;
 
 import android.content.Context;
+import android.net.Uri;
 import android.os.Environment;
 import android.system.ErrnoException;
 import android.system.Os;
 import android.system.OsConstants;
 import android.system.StructPollfd;
+import android.util.AtomicFile;
 import android.util.JsonReader;
 import android.util.JsonWriter;
 import android.util.Log;
@@ -15,6 +17,7 @@ import java.io.Closeable;
 import java.io.File;
 import java.io.FileDescriptor;
 import java.io.FileNotFoundException;
+import java.io.FileReader;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
@@ -129,6 +132,15 @@ public final class FileHelper {
         } else {
             return null;
         }
+    }
+
+    public static InputStreamReader openItemFile(Context context, Configuration.Item item) throws FileNotFoundException {
+        if (item.location.startsWith("content://"))
+            return new InputStreamReader(context.getContentResolver().openInputStream(Uri.parse(item.location)));
+        if (item.isDownloadable())
+            return new InputStreamReader(new AtomicFile(getItemFile(context, item)).openRead());
+        else
+            return new FileReader(getItemFile(context, item));
     }
 
     /**
