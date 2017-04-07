@@ -17,6 +17,7 @@ import android.view.Menu;
 import android.view.MenuItem;
 import android.widget.Spinner;
 import android.widget.Switch;
+import android.widget.Toast;
 
 public class ItemActivity extends AppCompatActivity {
 
@@ -32,6 +33,8 @@ public class ItemActivity extends AppCompatActivity {
 
         intent.addCategory(Intent.CATEGORY_OPENABLE);
         intent.setType("*/*");
+        intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        intent.addFlags(Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
 
         startActivityForResult(intent, READ_REQUEST_CODE);
     }
@@ -40,10 +43,16 @@ public class ItemActivity extends AppCompatActivity {
     public void onActivityResult(int requestCode, int resultCode,
                                  Intent resultData) {
         if (requestCode == READ_REQUEST_CODE && resultCode == Activity.RESULT_OK) {
-            Uri uri = null;
+
             if (resultData != null) {
-                uri = resultData.getData();
-                locationText.setText(uri.toString());
+                Uri uri = resultData.getData();
+                try {
+                    getContentResolver().takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION);
+
+                    locationText.setText(uri.toString());
+                } catch (SecurityException e) {
+                    Toast.makeText(this, "Canonot open file: No permission.", Toast.LENGTH_SHORT);
+                }
             }
         }
     }
