@@ -113,13 +113,16 @@ public final class FileHelper {
      * @return File or null, if that item is not downloadable.
      */
     public static File getItemFile(Context context, Configuration.Item item) {
-        if (!item.location.contains("/"))
-            return null;
-
-        try {
-            return new File(context.getExternalFilesDir(null), java.net.URLEncoder.encode(item.location, "UTF-8"));
-        } catch (UnsupportedEncodingException e) {
-            e.printStackTrace();
+        if (item.isDownloadable()) {
+            try {
+                return new File(context.getExternalFilesDir(null), java.net.URLEncoder.encode(item.location, "UTF-8"));
+            } catch (UnsupportedEncodingException e) {
+                e.printStackTrace();
+                return null;
+            }
+        } else if (item.location.startsWith("file:")) {
+            return new File(item.location.substring(5));
+        } else {
             return null;
         }
     }
