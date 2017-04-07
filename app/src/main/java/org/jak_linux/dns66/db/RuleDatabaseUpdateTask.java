@@ -11,6 +11,8 @@ import android.app.Activity;
 import android.app.AlertDialog;
 import android.app.ProgressDialog;
 import android.content.Context;
+import android.content.Intent;
+import android.net.Uri;
 import android.os.AsyncTask;
 import android.support.annotation.NonNull;
 import android.support.annotation.Nullable;
@@ -86,6 +88,16 @@ public class RuleDatabaseUpdateTask extends AsyncTask<Void, String, Void> {
             if (this.isCancelled())
                 break;
 
+            if (item.location.startsWith("content:/")) {
+                try {
+                    context.getContentResolver().takePersistableUriPermission(Uri.parse(item.location), Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                } catch (SecurityException e) {
+                    Log.d(TAG, "doInBackground: Error taking permission: ", e);
+                    errors.add(String.format("<b>%s</b><br>%s", item.title, "Permission denied"));
+                }
+                continue;
+            }
+
             File file = FileHelper.getItemFile(context, item);
             if (file == null || !item.isDownloadable())
                 continue;
@@ -96,6 +108,7 @@ public class RuleDatabaseUpdateTask extends AsyncTask<Void, String, Void> {
                 url = new URL(item.location);
             } catch (MalformedURLException e) {
                 Log.d(TAG, "doInBackground: Invalid URL: " + e, e);
+                errors.add(String.format("<b>%s</b><br>%s", item.title, "Invalid URL"));
                 continue;
             }
 

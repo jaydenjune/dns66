@@ -1,6 +1,7 @@
 package org.jak_linux.dns66;
 
 import android.content.Context;
+import android.content.Intent;
 import android.net.Uri;
 import android.os.Environment;
 import android.system.ErrnoException;
@@ -135,12 +136,18 @@ public final class FileHelper {
     }
 
     public static InputStreamReader openItemFile(Context context, Configuration.Item item) throws FileNotFoundException {
-        if (item.location.startsWith("content://"))
-            return new InputStreamReader(context.getContentResolver().openInputStream(Uri.parse(item.location)));
-        if (item.isDownloadable())
+        if (item.location.startsWith("content://")) {
+            try {
+                return new InputStreamReader(context.getContentResolver().openInputStream(Uri.parse(item.location)));
+            } catch (SecurityException e) {
+                Log.d("FileHelper", "openItemFile: Cannot open", e);
+                throw new FileNotFoundException(e.getMessage());
+            }
+        } else if (item.isDownloadable()) {
             return new InputStreamReader(new AtomicFile(getItemFile(context, item)).openRead());
-        else
+        } else {
             return new FileReader(getItemFile(context, item));
+        }
     }
 
     /**

@@ -29,7 +29,7 @@ public class ItemActivity extends AppCompatActivity {
     private Switch stateSwitch;
 
     public void performFileSearch() {
-        Intent intent = new Intent(Intent.ACTION_GET_CONTENT);
+        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
 
         intent.addCategory(Intent.CATEGORY_OPENABLE);
         intent.setType("*/*");
@@ -51,7 +51,7 @@ public class ItemActivity extends AppCompatActivity {
 
                     locationText.setText(uri.toString());
                 } catch (SecurityException e) {
-                    Toast.makeText(this, "Canonot open file: No permission.", Toast.LENGTH_SHORT);
+                    Toast.makeText(this, "Could not allow use after reboot.", Toast.LENGTH_SHORT).show();
                 }
             }
         }
