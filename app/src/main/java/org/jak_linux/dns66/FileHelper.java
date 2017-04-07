@@ -1,6 +1,7 @@
 package org.jak_linux.dns66;
 
 import android.content.Context;
+import android.os.Environment;
 import android.system.ErrnoException;
 import android.system.Os;
 import android.system.OsConstants;
@@ -121,7 +122,10 @@ public final class FileHelper {
                 return null;
             }
         } else if (item.location.startsWith("file:")) {
-            return new File(item.location.substring(5));
+            String location = item.location.substring(5);
+            if (location.charAt(0) == '/')
+                return new File(location);
+            return new File(Environment.getExternalStorageDirectory(), location);
         } else {
             return null;
         }

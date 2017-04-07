@@ -2,6 +2,7 @@ package org.jak_linux.dns66;
 
 import android.content.Context;
 import android.content.res.AssetManager;
+import android.os.Environment;
 import android.system.ErrnoException;
 import android.system.Os;
 import android.system.OsConstants;
@@ -52,6 +53,7 @@ public class FileHelperTest {
     }
 
     @Test
+    @PrepareForTest({Environment.class})
     public void testGetItemFile() throws Exception {
         File file = new File("/dir/");
         when(mockContext.getExternalFilesDir(null)).thenReturn(file);
@@ -65,6 +67,13 @@ public class FileHelperTest {
 
         item.location = "file:/myfile";
         assertEquals(new File("/myfile"), FileHelper.getItemFile(mockContext, item));
+
+        mockStatic(Environment.class);
+        when(Environment.getExternalStorageDirectory()).thenReturn(new File("/sdcard/"));
+
+        item.location = "file:myfile";
+        assertEquals(new File("/sdcard/myfile"), FileHelper.getItemFile(mockContext, item));
+
 
         item.location = "ahost.com";
         assertNull(FileHelper.getItemFile(mockContext, item));

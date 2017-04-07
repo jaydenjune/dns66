@@ -7,13 +7,16 @@
  */
 package org.jak_linux.dns66.main;
 
+import android.Manifest;
 import android.app.AlertDialog;
 import android.app.PendingIntent;
 import android.content.Context;
 import android.content.DialogInterface;
 import android.content.Intent;
+import android.content.pm.PackageManager;
 import android.net.VpnService;
 import android.os.Bundle;
+import android.support.v4.app.ActivityCompat;
 import android.support.v4.app.Fragment;
 import android.support.v4.content.ContextCompat;
 import android.util.AtomicFile;
@@ -96,7 +99,7 @@ public class StartFragment extends Fragment {
         stateText.setText(rootView.getContext().getString(AdVpnService.vpnStatusToTextId(status)));
 
         startButton.getDrawable().setTintList(null);
-        switch(status) {
+        switch (status) {
             case AdVpnService.VPN_STATUS_RECONNECTING:
             case AdVpnService.VPN_STATUS_STARTING:
             case AdVpnService.VPN_STATUS_STOPPING:
@@ -116,6 +119,20 @@ public class StartFragment extends Fragment {
     }
 
     private void checkHostsFilesAndStartService() {
+        for (Configuration.Item item : MainActivity.config.hosts.items) {
+            if (!item.location.startsWith("file:") || item.state == Configuration.Item.STATE_IGNORE)
+                continue;
+
+            if (ContextCompat.checkSelfPermission(getActivity(), Manifest.permission.READ_EXTERNAL_STORAGE)
+                    != PackageManager.PERMISSION_GRANTED) {
+                Log.d(TAG, "checkHostsFilesAndStartService: Requesting permissions");
+                ActivityCompat.requestPermissions(getActivity(), new String[]{Manifest.permission.READ_EXTERNAL_STORAGE},
+                        1);
+                return;
+            }
+            break;
+        }
+
         if (!areHostsFilesExistant()) {
             new AlertDialog.Builder(getActivity())
                     .setIcon(R.drawable.ic_warning)
@@ -157,11 +174,15 @@ public class StartFragment extends Fragment {
     private boolean areHostsFilesExistant() {
         if (!MainActivity.config.hosts.enabled)
             return true;
+
         for (Configuration.Item item : MainActivity.config.hosts.items) {
             File file = FileHelper.getItemFile(getContext(), item);
             if (item.state != Configuration.Item.STATE_IGNORE && file != null) {
                 try {
-                    new AtomicFile(file).openRead().close();
+                    if (item.isDownloadable())
+                        new AtomicFile(file).openRead().close();
+                    else if (!file.exists())
+                        return false;
                 } catch (IOException e) {
                     return false;
                 }

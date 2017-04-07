@@ -149,7 +149,10 @@ public class RuleDatabase {
             Reader reader;
             AtomicFile atomicFile = new AtomicFile(file);
             try {
-                reader = new InputStreamReader(atomicFile.openRead());
+                if (item.isDownloadable())
+                    reader = new InputStreamReader(atomicFile.openRead());
+                else
+                    reader = new FileReader(file);
             } catch (FileNotFoundException e) {
                 e.printStackTrace();
                 return;
