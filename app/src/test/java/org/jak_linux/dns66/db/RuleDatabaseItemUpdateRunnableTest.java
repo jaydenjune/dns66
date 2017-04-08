@@ -264,10 +264,13 @@ public class RuleDatabaseItemUpdateRunnableTest {
     }
 
     @Test
-    @PrepareForTest({Log.class, RuleDatabaseItemUpdateRunnable.class})
+    @PrepareForTest({Log.class})
     public void testGetHttpURLConnection() throws Exception {
         RuleDatabaseUpdateTask task = new RuleDatabaseUpdateTask(mockContext, null, false);
-        RuleDatabaseItemUpdateRunnable itemUpdateRunnable = new RuleDatabaseItemUpdateRunnable(task, mockContext, mock(Configuration.Item.class));
+        RuleDatabaseItemUpdateRunnable itemUpdateRunnable = mock(RuleDatabaseItemUpdateRunnable.class);
+
+        when(itemUpdateRunnable.getHttpURLConnection(any(File.class), any(SingleWriterMultipleReaderFile.class), any(URL.class))).thenCallRealMethod();
+        when(itemUpdateRunnable.internalOpenHttpConnection(any(URL.class))).thenReturn(connection);
 
         when(singleWriterMultipleReaderFile.openRead()).thenReturn(mock(FileInputStream.class));
 

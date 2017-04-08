@@ -111,7 +111,7 @@ class RuleDatabaseItemUpdateRunnable implements Runnable {
      */
     @NonNull
     HttpURLConnection getHttpURLConnection(File file, SingleWriterMultipleReaderFile singleWriterMultipleReaderFile, URL url) throws IOException {
-        HttpURLConnection connection = (HttpURLConnection) url.openConnection();
+        HttpURLConnection connection = internalOpenHttpConnection(url);
         connection.setConnectTimeout(CONNECT_TIMEOUT_MILLIS);
         connection.setReadTimeout(READ_TIMEOUT_MILLIS);
         try {
@@ -123,6 +123,11 @@ class RuleDatabaseItemUpdateRunnable implements Runnable {
 
         connection.connect();
         return connection;
+    }
+
+    // Internal helper for testing.
+    HttpURLConnection internalOpenHttpConnection(URL url) throws IOException {
+        return (HttpURLConnection) url.openConnection();
     }
 
     /**
