@@ -11,12 +11,12 @@ import android.content.Context;
 import android.content.Intent;
 import android.net.Uri;
 import android.support.annotation.NonNull;
-import android.util.AtomicFile;
 import android.util.Log;
 
 import org.jak_linux.dns66.Configuration;
 import org.jak_linux.dns66.FileHelper;
 import org.jak_linux.dns66.R;
+import org.jak_linux.dns66.SingleWriterMultipleReaderFile;
 
 import java.io.File;
 import java.io.FileOutputStream;
@@ -94,14 +94,14 @@ class RuleDatabaseItemUpdateRunnable implements Runnable {
             return;
         }
 
-        AtomicFile atomicFile = new AtomicFile(file);
+        SingleWriterMultipleReaderFile singleWriterMultipleReaderFile = new SingleWriterMultipleReaderFile(file);
         HttpURLConnection connection = null;
         try {
-            connection = getHttpURLConnection(file, atomicFile, url);
+            connection = getHttpURLConnection(file, singleWriterMultipleReaderFile, url);
 
             if (!validateResponse(connection))
                 return;
-            downloadFile(file, atomicFile, connection);
+            downloadFile(file, singleWriterMultipleReaderFile, connection);
         } catch (IOException e) {
             parentTask.addError(item, e.getLocalizedMessage());
         } finally {
@@ -113,19 +113,19 @@ class RuleDatabaseItemUpdateRunnable implements Runnable {
     /**
      * Opens a new HTTP connection.
      *
-     * @param file       Target file
-     * @param atomicFile Target file
-     * @param url        URL to download from
+     * @param file                           Target file
+     * @param singleWriterMultipleReaderFile Target file
+     * @param url                            URL to download from
      * @return An initialized HTTP connection.
      * @throws IOException
      */
     @NonNull
-    HttpURLConnection getHttpURLConnection(File file, AtomicFile atomicFile, URL url) throws IOException {
+    HttpURLConnection getHttpURLConnection(File file, SingleWriterMultipleReaderFile singleWriterMultipleReaderFile, URL url) throws IOException {
         HttpURLConnection connection = (HttpURLConnection) url.openConnection();
         connection.setConnectTimeout(CONNECT_TIMEOUT_MILLIS);
         connection.setReadTimeout(READ_TIMEOUT_MILLIS);
         try {
-            atomicFile.openRead().close();
+            singleWriterMultipleReaderFile.openRead().close();
             connection.setIfModifiedSince(file.lastModified());
         } catch (IOException e) {
             // Ignore addError here
@@ -157,21 +157,21 @@ class RuleDatabaseItemUpdateRunnable implements Runnable {
     }
 
     /**
-     * Downloads a file from a connection to an atomicfile.
+     * Downloads a file from a connection to an singleWriterMultipleReaderFile.
      *
-     * @param file       The file to write to
-     * @param atomicFile The atomic file for the destination file
-     * @param connection The connection to read from
+     * @param file                           The file to write to
+     * @param singleWriterMultipleReaderFile The atomic file for the destination file
+     * @param connection                     The connection to read from
      * @throws IOException I/O exceptions.
      */
-    void downloadFile(File file, AtomicFile atomicFile, HttpURLConnection connection) throws IOException {
+    void downloadFile(File file, SingleWriterMultipleReaderFile singleWriterMultipleReaderFile, HttpURLConnection connection) throws IOException {
         InputStream inStream = connection.getInputStream();
-        FileOutputStream outStream = atomicFile.startWrite();
+        FileOutputStream outStream = singleWriterMultipleReaderFile.startWrite();
 
         try {
             copyStream(inStream, outStream);
 
-            atomicFile.finishWrite(outStream);
+            singleWriterMultipleReaderFile.finishWrite(outStream);
             outStream = null;
             // Write has started, set modification time.
             if (connection.getLastModified() == 0 || !file.setLastModified(connection.getLastModified())) {
@@ -179,7 +179,7 @@ class RuleDatabaseItemUpdateRunnable implements Runnable {
             }
         } finally {
             if (outStream != null)
-                atomicFile.failWrite(outStream);
+                singleWriterMultipleReaderFile.failWrite(outStream);
         }
     }
 

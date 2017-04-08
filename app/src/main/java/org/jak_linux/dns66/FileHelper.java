@@ -1,14 +1,12 @@
 package org.jak_linux.dns66;
 
 import android.content.Context;
-import android.content.Intent;
 import android.net.Uri;
 import android.os.Environment;
 import android.system.ErrnoException;
 import android.system.Os;
 import android.system.OsConstants;
 import android.system.StructPollfd;
-import android.util.AtomicFile;
 import android.util.JsonReader;
 import android.util.JsonWriter;
 import android.util.Log;
@@ -144,7 +142,7 @@ public final class FileHelper {
                 throw new FileNotFoundException(e.getMessage());
             }
         } else if (item.isDownloadable()) {
-            return new InputStreamReader(new AtomicFile(getItemFile(context, item)).openRead());
+            return new InputStreamReader(new SingleWriterMultipleReaderFile(getItemFile(context, item)).openRead());
         } else {
             return new FileReader(getItemFile(context, item));
         }
