@@ -7,6 +7,7 @@ import android.util.Log;
 
 import org.jak_linux.dns66.Configuration;
 import org.junit.Before;
+import org.junit.Ignore;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.mockito.invocation.InvocationOnMock;
@@ -31,7 +32,7 @@ import static org.powermock.api.mockito.PowerMockito.*;
 
 @RunWith(PowerMockRunner.class)
 @PrepareForTest({Log.class})
-public class RuleDatabaseUpdateTaskTest {
+public class RuleDatabaseItemUpdateRunnableTest {
     private Context mockContext;
     private File file;
     private AtomicFile atomicFile;
@@ -61,12 +62,12 @@ public class RuleDatabaseUpdateTaskTest {
     }
 
     @Test
-    public void testDoInBackground() throws Exception {
+    @Ignore
+    public void testRun() throws Exception {
         RuleDatabaseUpdateTask task = mock(RuleDatabaseUpdateTask.class);
 
         CountingAnswer downloadCount = new CountingAnswer(null);
         when(task.doInBackground()).thenCallRealMethod();
-        when(task, "downloadFile", any(File.class), any(AtomicFile.class), any(HttpURLConnection.class)).then(downloadCount);
 
         task.context = mockContext;
         task.errors = new ArrayList<>();
@@ -79,28 +80,28 @@ public class RuleDatabaseUpdateTaskTest {
         task.configuration.hosts.items.add(new Configuration.Item());
         task.configuration.hosts.items.get(0).title = "http-title";
         task.configuration.hosts.items.get(0).location = "http://foo";
-        task.configuration.hosts.items.get(1).location = "file:/foo";
-        task.configuration.hosts.items.get(2).location = "example.com";
-        task.configuration.hosts.items.get(3).title = "https-title";
-        task.configuration.hosts.items.get(3).location = "https://foo";
+
+        RuleDatabaseItemUpdateRunnable itemUpdateRunnable = mock(RuleDatabaseItemUpdateRunnable.class);
+        itemUpdateRunnable.parentTask = task;
+        itemUpdateRunnable.context = mockContext;
+        itemUpdateRunnable.item = task.configuration.hosts.items.get(0);
+
+        when(itemUpdateRunnable, "run").thenCallRealMethod();
+        when(itemUpdateRunnable, "reallyRun").thenCallRealMethod();
+        when(task.getCommand(any(Configuration.Item.class))).thenReturn(itemUpdateRunnable);
+        when(itemUpdateRunnable, "downloadFile", any(File.class), any(AtomicFile.class), any(HttpURLConnection.class)).then(downloadCount);
+
 
         // Scenario 1: Validate response fails
-        task.doInBackground();
+        itemUpdateRunnable.run();
         assertEquals(0, downloadCount.numCalls);
 
         // Scenario 2: Validate response succeeds
-        when(task.validateResponse(any(Configuration.Item.class), any(HttpURLConnection.class))).thenReturn(true);
-        task.doInBackground();
-        assertEquals(2, downloadCount.numCalls);
+        when(itemUpdateRunnable.validateResponse(any(Configuration.Item.class), any(HttpURLConnection.class))).thenReturn(true);
+        itemUpdateRunnable.run();
+        assertEquals(1, downloadCount.numCalls);
 
-        // Scenario 3: Validate response succeeds, but we are cancelled
-        when(task.validateResponse(any(Configuration.Item.class), any(HttpURLConnection.class))).thenReturn(true);
-        when(task.isCancelled()).thenReturn(true);
-        task.doInBackground();
-        assertEquals(2, downloadCount.numCalls);
-        when(task.isCancelled()).thenReturn(false);
-
-        // Scenario 4: Download file throws an exception
+        // Scenario 3: Download file throws an exception
         CountingAnswer downloadExceptionCount = new CountingAnswer(null) {
             @Override
             public Object answer(InvocationOnMock invocation) throws Throwable {
@@ -108,8 +109,8 @@ public class RuleDatabaseUpdateTaskTest {
                 throw new IOException("FooBarException");
             }
         };
-        when(task, "downloadFile", any(File.class), any(AtomicFile.class), any(HttpURLConnection.class)).then(downloadExceptionCount);
-        task.doInBackground();
+        when(itemUpdateRunnable, "downloadFile", any(File.class), any(AtomicFile.class), any(HttpURLConnection.class)).then(downloadExceptionCount);
+        itemUpdateRunnable.run();
         assertEquals(2, downloadExceptionCount.numCalls);
         assertEquals(2, task.errors.size());
         assertTrue("http-title in" + task.errors.get(0) + " or " + task.errors.get(1), task.errors.get(0).matches(".*http-title.*") || task.errors.get(1).matches(".*http-title.*"));
@@ -119,27 +120,29 @@ public class RuleDatabaseUpdateTaskTest {
     @Test
     public void testValidateResponse() throws Exception {
         RuleDatabaseUpdateTask task = new RuleDatabaseUpdateTask(mockContext, null, false);
+        RuleDatabaseItemUpdateRunnable itemUpdateRunnable = new RuleDatabaseItemUpdateRunnable(task, mockContext, null);
 
         Resources resources = mock(Resources.class);
         when(mockContext.getResources()).thenReturn(resources);
         when(resources.getString(anyInt(), anyString(), anyInt(), anyString())).thenReturn("%s %s %s");
 
         when(connection.getResponseCode()).thenReturn(200);
-        assertTrue("200 is OK", task.validateResponse(mock(Configuration.Item.class), connection));
+        assertTrue("200 is OK", itemUpdateRunnable.validateResponse(mock(Configuration.Item.class), connection));
         assertEquals(0, task.errors.size());
 
         when(connection.getResponseCode()).thenReturn(404);
-        assertFalse("404 is not OK", task.validateResponse(mock(Configuration.Item.class), connection));
+        assertFalse("404 is not OK", itemUpdateRunnable.validateResponse(mock(Configuration.Item.class), connection));
         assertEquals(1, task.errors.size());
 
         when(connection.getResponseCode()).thenReturn(304);
-        assertFalse("304 is not OK", task.validateResponse(mock(Configuration.Item.class), connection));
+        assertFalse("304 is not OK", itemUpdateRunnable.validateResponse(mock(Configuration.Item.class), connection));
         assertEquals(1, task.errors.size());
     }
 
     @Test
     public void testDownloadFile() throws Exception {
         RuleDatabaseUpdateTask task = new RuleDatabaseUpdateTask(mockContext, null, false);
+        RuleDatabaseItemUpdateRunnable itemUpdateRunnable = new RuleDatabaseItemUpdateRunnable(task, mockContext, null);
 
         byte[] bar = new byte[]{'h', 'a', 'l', 'l', 'o'};
         final ByteArrayInputStream bis = new ByteArrayInputStream(bar);
@@ -160,7 +163,7 @@ public class RuleDatabaseUpdateTaskTest {
 
         when(connection.getInputStream()).thenReturn(bis);
         when(atomicFile.startWrite()).thenReturn(fos);
-        task.downloadFile(file, atomicFile, connection);
+        itemUpdateRunnable.downloadFile(file, atomicFile, connection);
 
         assertArrayEquals(bar, bos.toByteArray());
         assertEquals(0, failAnswer.numCalls);
@@ -173,6 +176,7 @@ public class RuleDatabaseUpdateTaskTest {
     @Test
     public void testDownloadFile_exception() throws Exception {
         RuleDatabaseUpdateTask task = new RuleDatabaseUpdateTask(mockContext, null, false);
+        RuleDatabaseItemUpdateRunnable itemUpdateRunnable = new RuleDatabaseItemUpdateRunnable(task, mockContext, null);
         FileOutputStream fos = mock(FileOutputStream.class);
         InputStream is = mock(InputStream.class);
 
@@ -181,7 +185,7 @@ public class RuleDatabaseUpdateTaskTest {
 
         doThrow(new IOException("foobar")).when(fos, "write", any(byte[].class), anyInt(), anyInt());
         try {
-            task.downloadFile(file, atomicFile, connection);
+            itemUpdateRunnable.downloadFile(file, atomicFile, connection);
             fail("Should have thrown exception");
         } catch (IOException e) {
             assertEquals("foobar", e.getMessage());
@@ -196,6 +200,7 @@ public class RuleDatabaseUpdateTaskTest {
         CountingAnswer setLastModifiedAnswerTrue = new CountingAnswer(true);
         CountingAnswer setLastModifiedAnswerFalse = new CountingAnswer(false);
         RuleDatabaseUpdateTask task = new RuleDatabaseUpdateTask(mockContext, null, false);
+        RuleDatabaseItemUpdateRunnable itemUpdateRunnable = new RuleDatabaseItemUpdateRunnable(task, mockContext, null);
         FileOutputStream fos = mock(FileOutputStream.class);
         InputStream is = mock(InputStream.class);
 
@@ -208,7 +213,7 @@ public class RuleDatabaseUpdateTaskTest {
         when(connection.getLastModified()).thenReturn(0L);
         when(file.setLastModified(anyLong())).then(setLastModifiedAnswerFalse);
 
-        task.downloadFile(file, atomicFile, connection);
+        itemUpdateRunnable.downloadFile(file, atomicFile, connection);
 
         assertEquals(0, failAnswer.numCalls);
         assertEquals(1, debugAnswer.numCalls);
@@ -218,7 +223,7 @@ public class RuleDatabaseUpdateTaskTest {
         when(connection.getLastModified()).thenReturn(0L);
         when(file.setLastModified(anyLong())).then(setLastModifiedAnswerTrue);
 
-        task.downloadFile(file, atomicFile, connection);
+        itemUpdateRunnable.downloadFile(file, atomicFile, connection);
 
         assertEquals(0, failAnswer.numCalls);
         assertEquals(2, debugAnswer.numCalls);
@@ -228,7 +233,7 @@ public class RuleDatabaseUpdateTaskTest {
         when(connection.getLastModified()).thenReturn(1L);
         when(file.setLastModified(anyLong())).then(setLastModifiedAnswerFalse);
 
-        task.downloadFile(file, atomicFile, connection);
+        itemUpdateRunnable.downloadFile(file, atomicFile, connection);
 
         assertEquals(0, failAnswer.numCalls);
         assertEquals(3, debugAnswer.numCalls);
@@ -238,7 +243,7 @@ public class RuleDatabaseUpdateTaskTest {
         when(connection.getLastModified()).thenReturn(1L);
         when(file.setLastModified(anyLong())).then(setLastModifiedAnswerTrue);
 
-        task.downloadFile(file, atomicFile, connection);
+        itemUpdateRunnable.downloadFile(file, atomicFile, connection);
 
         assertEquals(0, failAnswer.numCalls);
         assertEquals(3, debugAnswer.numCalls); // as before
@@ -248,37 +253,39 @@ public class RuleDatabaseUpdateTaskTest {
     @Test
     public void testCopyStream() throws Exception {
         RuleDatabaseUpdateTask task = new RuleDatabaseUpdateTask(mockContext, null, false);
+        RuleDatabaseItemUpdateRunnable itemUpdateRunnable = new RuleDatabaseItemUpdateRunnable(task, mockContext, null);
 
         byte[] bar = new byte[]{'h', 'a', 'l', 'l', 'o'};
         ByteArrayInputStream bis = new ByteArrayInputStream(bar);
         ByteArrayOutputStream bos = new ByteArrayOutputStream();
 
-        task.copyStream(bis, bos);
+        itemUpdateRunnable.copyStream(bis, bos);
         assertArrayEquals(bar, bos.toByteArray());
     }
 
     @Test
-    @PrepareForTest({Log.class, RuleDatabaseUpdateTask.class})
+    @PrepareForTest({Log.class, RuleDatabaseItemUpdateRunnable.class})
     public void testGetHttpURLConnection() throws Exception {
         RuleDatabaseUpdateTask task = new RuleDatabaseUpdateTask(mockContext, null, false);
+        RuleDatabaseItemUpdateRunnable itemUpdateRunnable = new RuleDatabaseItemUpdateRunnable(task, mockContext, null);
 
         when(atomicFile.openRead()).thenReturn(mock(FileInputStream.class));
 
-        assertSame(connection, task.getHttpURLConnection(file, atomicFile, url));
+        assertSame(connection, itemUpdateRunnable.getHttpURLConnection(file, atomicFile, url));
 
         // Setting modified.
         CountingAnswer setIfModifiedAnswer = new CountingAnswer(null);
         when(file.lastModified()).thenReturn(42L);
         when(connection, "setIfModifiedSince", eq(42L)).then(setIfModifiedAnswer);
 
-        assertSame(connection, task.getHttpURLConnection(file, atomicFile, url));
+        assertSame(connection, itemUpdateRunnable.getHttpURLConnection(file, atomicFile, url));
         assertEquals(1, setIfModifiedAnswer.numCalls);
 
         // If we do not have a last modified value, do not set if-modified-since.
         setIfModifiedAnswer.numCalls = 0;
         when(file.lastModified()).thenReturn(0L);
 
-        assertSame(connection, task.getHttpURLConnection(file, atomicFile, url));
+        assertSame(connection, itemUpdateRunnable.getHttpURLConnection(file, atomicFile, url));
         assertEquals(0, setIfModifiedAnswer.numCalls);
     }
 
