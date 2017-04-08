@@ -196,6 +196,10 @@ public class MainActivity extends AppCompatActivity {
     protected void onNewIntent(Intent intent) {
         Log.d("MainActivity", "onNewIntent: Wee");
 
+        if (intent.getBooleanExtra("UPDATE", false)) {
+            refresh();
+        }
+
         List<String> errors = RuleDatabaseUpdateTask.lastErrors.getAndSet(null);
         if (errors != null && !errors.isEmpty()) {
             Log.d("MainActivity", "onNewIntent: It's an error");
