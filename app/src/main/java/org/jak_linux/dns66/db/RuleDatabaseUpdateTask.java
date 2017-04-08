@@ -124,7 +124,7 @@ public class RuleDatabaseUpdateTask extends AsyncTask<Void, Void, Void> {
         if (notificationBuilder != null) {
             notificationBuilder.setProgress(pending.size(), done.size(), false);
             notificationBuilder.setStyle(new Notification.BigTextStyle().bigText(builder.toString()));
-            notificationBuilder.setContentText("Updating host files");
+            notificationBuilder.setContentText(String.format("Updating %1$d host files", pending.size()));
             notificationManager.notify(UPDATE_NOTIFICATION_ID, notificationBuilder.build());
         }
     }
