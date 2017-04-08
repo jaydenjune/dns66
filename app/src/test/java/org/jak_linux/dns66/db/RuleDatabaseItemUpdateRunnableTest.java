@@ -1,13 +1,14 @@
 package org.jak_linux.dns66.db;
 
+import android.content.ContentResolver;
 import android.content.Context;
 import android.content.res.Resources;
+import android.net.Uri;
 import android.util.Log;
 
 import org.jak_linux.dns66.Configuration;
 import org.jak_linux.dns66.SingleWriterMultipleReaderFile;
 import org.junit.Before;
-import org.junit.Ignore;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.mockito.invocation.InvocationOnMock;
@@ -62,7 +63,6 @@ public class RuleDatabaseItemUpdateRunnableTest {
     }
 
     @Test
-    @Ignore
     public void testRun() throws Exception {
         RuleDatabaseUpdateTask task = mock(RuleDatabaseUpdateTask.class);
 
@@ -71,6 +71,7 @@ public class RuleDatabaseItemUpdateRunnableTest {
 
         task.context = mockContext;
         task.errors = new ArrayList<>();
+        task.done = new ArrayList<>();
         task.pending = new ArrayList<>();
         task.configuration = new Configuration();
         task.configuration.hosts = new Configuration.Hosts();
@@ -81,13 +82,15 @@ public class RuleDatabaseItemUpdateRunnableTest {
         task.configuration.hosts.items.get(0).title = "http-title";
         task.configuration.hosts.items.get(0).location = "http://foo";
 
+        when(task, "addError", any(Configuration.Item.class), anyString()).thenCallRealMethod();
+        when(task, "addDone", any(Configuration.Item.class)).thenCallRealMethod();
+
         RuleDatabaseItemUpdateRunnable itemUpdateRunnable = mock(RuleDatabaseItemUpdateRunnable.class);
         itemUpdateRunnable.parentTask = task;
         itemUpdateRunnable.context = mockContext;
         itemUpdateRunnable.item = task.configuration.hosts.items.get(0);
 
         when(itemUpdateRunnable, "run").thenCallRealMethod();
-        when(itemUpdateRunnable, "reallyRun").thenCallRealMethod();
         when(task.getCommand(any(Configuration.Item.class))).thenReturn(itemUpdateRunnable);
         when(itemUpdateRunnable, "downloadFile", any(File.class), any(SingleWriterMultipleReaderFile.class), any(HttpURLConnection.class)).then(downloadCount);
 
@@ -95,11 +98,15 @@ public class RuleDatabaseItemUpdateRunnableTest {
         // Scenario 1: Validate response fails
         itemUpdateRunnable.run();
         assertEquals(0, downloadCount.numCalls);
+        assertEquals(1, task.done.size());
 
         // Scenario 2: Validate response succeeds
         when(itemUpdateRunnable.validateResponse(any(HttpURLConnection.class))).thenReturn(true);
+        when(itemUpdateRunnable.getHttpURLConnection(any(File.class), any(SingleWriterMultipleReaderFile.class), any(URL.class))).thenCallRealMethod();
+        when(itemUpdateRunnable.internalOpenHttpConnection(any(URL.class))).thenReturn(connection);
         itemUpdateRunnable.run();
         assertEquals(1, downloadCount.numCalls);
+        assertEquals(2, task.done.size());
 
         // Scenario 3: Download file throws an exception
         CountingAnswer downloadExceptionCount = new CountingAnswer(null) {
@@ -111,10 +118,47 @@ public class RuleDatabaseItemUpdateRunnableTest {
         };
         when(itemUpdateRunnable, "downloadFile", any(File.class), any(SingleWriterMultipleReaderFile.class), any(HttpURLConnection.class)).then(downloadExceptionCount);
         itemUpdateRunnable.run();
-        assertEquals(2, downloadExceptionCount.numCalls);
-        assertEquals(2, task.errors.size());
-        assertTrue("http-title in" + task.errors.get(0) + " or " + task.errors.get(1), task.errors.get(0).matches(".*http-title.*") || task.errors.get(1).matches(".*http-title.*"));
-        assertTrue("https-title in" + task.errors.get(1) + " or " + task.errors.get(1), task.errors.get(0).matches(".*https-title.*") || task.errors.get(1).matches(".*https-title.*"));
+        assertEquals(1, downloadExceptionCount.numCalls);
+        assertEquals(1, task.errors.size());
+        assertEquals(3, task.done.size());
+        assertTrue("http-title in" + task.errors.get(0), task.errors.get(0).matches(".*http-title.*"));
+    }
+
+    @Test
+    public void testRun_content() throws Exception {
+        RuleDatabaseUpdateTask task = new RuleDatabaseUpdateTask(mockContext, null, false);
+        ContentResolver mockResolver = mock(ContentResolver.class);
+        when(mockContext.getContentResolver()).thenReturn(mockResolver);
+
+        Configuration.Item item = new Configuration.Item();
+        item.location = "content://foo";
+        item.title = "content-uri";
+
+        RuleDatabaseItemUpdateRunnable itemUpdateRunnable = mock(RuleDatabaseItemUpdateRunnable.class);
+        itemUpdateRunnable.parentTask = task;
+        itemUpdateRunnable.context = mockContext;
+        itemUpdateRunnable.item = item;
+
+        when(itemUpdateRunnable, "run").thenCallRealMethod();
+        when(itemUpdateRunnable.parseUri(anyString())).thenReturn(mock(Uri.class));
+        CountingAnswer downloadCount = new CountingAnswer(null);
+        when(itemUpdateRunnable, "downloadFile", any(File.class), any(SingleWriterMultipleReaderFile.class), any(HttpURLConnection.class)).then(downloadCount);
+
+        itemUpdateRunnable.run();
+
+        assertEquals(0, downloadCount.numCalls);
+        assertEquals(0, task.errors.size());
+        assertEquals(0, task.done.size());
+        assertEquals(0, task.pending.size());
+
+        when(mockResolver, "takePersistableUriPermission", any(Uri.class), anyInt()).thenThrow(new SecurityException("FooBar"));
+
+        itemUpdateRunnable.run();
+
+        assertEquals(0, downloadCount.numCalls);
+        assertEquals(1, task.errors.size());
+        assertEquals(0, task.done.size());
+        assertEquals(0, task.pending.size());
     }
 
     @Test

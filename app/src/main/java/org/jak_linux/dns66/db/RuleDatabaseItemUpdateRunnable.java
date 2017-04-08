@@ -60,7 +60,7 @@ class RuleDatabaseItemUpdateRunnable implements Runnable {
         // Not sure if that is slow or not.
         if (item.location.startsWith("content:/")) {
             try {
-                context.getContentResolver().takePersistableUriPermission(Uri.parse(item.location), Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                context.getContentResolver().takePersistableUriPermission(parseUri(item.location), Intent.FLAG_GRANT_READ_URI_PERMISSION);
             } catch (SecurityException e) {
                 Log.d(TAG, "doInBackground: Error taking permission: ", e);
 
@@ -98,6 +98,13 @@ class RuleDatabaseItemUpdateRunnable implements Runnable {
             if (connection != null)
                 connection.disconnect();
         }
+    }
+
+    /**
+     * Internal helper for testing
+     */
+    Uri parseUri(String uri) {
+        return Uri.parse(uri);
     }
 
     /**
