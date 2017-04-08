@@ -77,11 +77,9 @@ public class RuleDatabaseUpdateTask extends AsyncTask<Void, Void, Void> {
 
 
         for (Configuration.Item item : configuration.hosts.items) {
-            if (item.state == STATE_IGNORE) {
-                continue;
-            }
-
-            executor.execute(getCommand(item));
+            RuleDatabaseItemUpdateRunnable runnable = getCommand(item);
+            if (runnable.shouldDownload())
+                executor.execute(runnable);
         }
 
         executor.shutdown();

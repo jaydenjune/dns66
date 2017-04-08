@@ -85,6 +85,7 @@ public class RuleDatabaseItemUpdateRunnableTest {
         mockTask.configuration.hosts.items.add(new Configuration.Item());
         mockTask.configuration.hosts.items.add(new Configuration.Item());
         mockTask.configuration.hosts.items.get(0).title = "http-title";
+        mockTask.configuration.hosts.items.get(0).state = Configuration.Item.STATE_DENY;
         mockTask.configuration.hosts.items.get(0).location = "http://foo";
 
         when(mockTask, "addError", any(Configuration.Item.class), anyString()).thenCallRealMethod();
@@ -96,11 +97,13 @@ public class RuleDatabaseItemUpdateRunnableTest {
         itemUpdateRunnable.item = mockTask.configuration.hosts.items.get(0);
 
         when(itemUpdateRunnable, "run").thenCallRealMethod();
+        when(itemUpdateRunnable, "shouldDownload").thenCallRealMethod();
         when(mockTask.getCommand(any(Configuration.Item.class))).thenReturn(itemUpdateRunnable);
         when(itemUpdateRunnable, "downloadFile", any(File.class), any(SingleWriterMultipleReaderFile.class), any(HttpURLConnection.class)).then(downloadCount);
 
 
         // Scenario 1: Validate response fails
+        assertTrue(itemUpdateRunnable.shouldDownload());
         itemUpdateRunnable.run();
         assertEquals(0, downloadCount.numCalls);
         assertEquals(1, mockTask.done.size());
@@ -109,6 +112,7 @@ public class RuleDatabaseItemUpdateRunnableTest {
         when(itemUpdateRunnable.validateResponse(any(HttpURLConnection.class))).thenReturn(true);
         when(itemUpdateRunnable.getHttpURLConnection(any(File.class), any(SingleWriterMultipleReaderFile.class), any(URL.class))).thenCallRealMethod();
         when(itemUpdateRunnable.internalOpenHttpConnection(any(URL.class))).thenReturn(connection);
+        assertTrue(itemUpdateRunnable.shouldDownload());
         itemUpdateRunnable.run();
         assertEquals(1, downloadCount.numCalls);
         assertEquals(2, mockTask.done.size());
@@ -122,6 +126,7 @@ public class RuleDatabaseItemUpdateRunnableTest {
             }
         };
         when(itemUpdateRunnable, "downloadFile", any(File.class), any(SingleWriterMultipleReaderFile.class), any(HttpURLConnection.class)).then(downloadExceptionCount);
+        assertTrue(itemUpdateRunnable.shouldDownload());
         itemUpdateRunnable.run();
         assertEquals(1, downloadExceptionCount.numCalls);
         assertEquals(1, mockTask.errors.size());
@@ -141,10 +146,12 @@ public class RuleDatabaseItemUpdateRunnableTest {
         itemUpdateRunnable.item = item;
 
         when(itemUpdateRunnable, "run").thenCallRealMethod();
+        when(itemUpdateRunnable, "shouldDownload").thenCallRealMethod();
         when(itemUpdateRunnable.parseUri(anyString())).thenReturn(mock(Uri.class));
         CountingAnswer downloadCount = new CountingAnswer(null);
         when(itemUpdateRunnable, "downloadFile", any(File.class), any(SingleWriterMultipleReaderFile.class), any(HttpURLConnection.class)).then(downloadCount);
 
+        assertTrue(itemUpdateRunnable.shouldDownload());
         itemUpdateRunnable.run();
 
         assertEquals(0, downloadCount.numCalls);
@@ -163,27 +170,31 @@ public class RuleDatabaseItemUpdateRunnableTest {
     }
 
     @Test
-    public void testRun_host() throws Exception {
+    public void testShouldDownload() throws Exception {
         Configuration.Item item = new Configuration.Item();
+        item.state = Configuration.Item.STATE_DENY;
         item.location = "example.com";
         item.title = "host-uri";
 
-        RuleDatabaseItemUpdateRunnable itemUpdateRunnable = mock(RuleDatabaseItemUpdateRunnable.class);
-        itemUpdateRunnable.parentTask = realTask;
-        itemUpdateRunnable.context = mockContext;
-        itemUpdateRunnable.item = item;
+        RuleDatabaseItemUpdateRunnable itemUpdateRunnable = new RuleDatabaseItemUpdateRunnable(mockTask, mockContext, item);
 
-        when(itemUpdateRunnable, "run").thenCallRealMethod();
-        when(itemUpdateRunnable.parseUri(anyString())).thenReturn(mock(Uri.class));
-        CountingAnswer downloadCount = new CountingAnswer(null);
-        when(itemUpdateRunnable, "downloadFile", any(File.class), any(SingleWriterMultipleReaderFile.class), any(HttpURLConnection.class)).then(downloadCount);
+        // File should not be downloaded
+        assertFalse(itemUpdateRunnable.shouldDownload());
 
-        itemUpdateRunnable.run();
+        // Content URI should
+        item.location = "content://foo";
+        assertTrue(itemUpdateRunnable.shouldDownload());
 
-        assertEquals(0, downloadCount.numCalls);
-        assertEquals(0, realTask.errors.size());
-        assertEquals(0, realTask.done.size());
-        assertEquals(0, realTask.pending.size());
+        // Do not download ignored URIs
+        item.state = Configuration.Item.STATE_IGNORE;
+        assertFalse(itemUpdateRunnable.shouldDownload());
+        item.state = Configuration.Item.STATE_DENY;
+
+        item.location = "https://foo";
+        assertTrue(itemUpdateRunnable.shouldDownload());
+
+        item.location = "http://foo";
+        assertTrue(itemUpdateRunnable.shouldDownload());
     }
 
     @Test

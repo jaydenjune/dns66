@@ -39,12 +39,39 @@ class RuleDatabaseItemUpdateRunnable implements Runnable {
     RuleDatabaseUpdateTask parentTask;
     Configuration.Item item;
     Context context;
+    private URL url;
+    private File file;
 
 
     RuleDatabaseItemUpdateRunnable(@NonNull RuleDatabaseUpdateTask parentTask, @NonNull Context context, @NonNull Configuration.Item item) {
         this.parentTask = parentTask;
         this.context = context;
         this.item = item;
+    }
+
+    boolean shouldDownload() {
+        if (item.state == Configuration.Item.STATE_IGNORE) {
+            return false;
+        }
+
+        // Not sure if that is slow or not.
+        if (item.location.startsWith("content:/")) {
+            return true;
+        }
+
+        file = FileHelper.getItemFile(context, item);
+        if (file == null || !item.isDownloadable()) {
+            return false;
+        }
+
+        try {
+            url = new URL(item.location);
+        } catch (MalformedURLException e) {
+            parentTask.addError(item, "Invalid URL:" + item.location);
+            return false;
+        }
+
+        return true;
     }
 
     /**
@@ -57,28 +84,13 @@ class RuleDatabaseItemUpdateRunnable implements Runnable {
         } catch (UnsatisfiedLinkError e) {
         }
 
-        // Not sure if that is slow or not.
         if (item.location.startsWith("content:/")) {
             try {
                 context.getContentResolver().takePersistableUriPermission(parseUri(item.location), Intent.FLAG_GRANT_READ_URI_PERMISSION);
             } catch (SecurityException e) {
                 Log.d(TAG, "doInBackground: Error taking permission: ", e);
-
                 parentTask.addError(item, "Permission denied");
-                return;
             }
-        }
-
-        final File file = FileHelper.getItemFile(context, item);
-        if (file == null || !item.isDownloadable()) {
-            return;
-        }
-
-        final URL url;
-        try {
-            url = new URL(item.location);
-        } catch (MalformedURLException e) {
-            parentTask.addError(item, "Invalid URL:" + item.location);
             return;
         }
 
