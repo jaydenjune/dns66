@@ -43,6 +43,7 @@ public class RuleDatabaseUpdateTask extends AsyncTask<Void, Void, Void> {
     Configuration configuration;
     ArrayList<String> errors = new ArrayList<>();
     List<String> pending = new ArrayList<>();
+    List<String> done = new ArrayList<>();
     private NotificationManager notificationManager;
     private Notification.Builder notificationBuilder;
 
@@ -73,14 +74,10 @@ public class RuleDatabaseUpdateTask extends AsyncTask<Void, Void, Void> {
         Log.d(TAG, "doInBackground: begin");
         long start = System.currentTimeMillis();
         ExecutorService executor = Executors.newCachedThreadPool();
-        for (Configuration.Item item : configuration.hosts.items) {
-            pending.add(item.title);
-        }
-        updateProgressNotification();
+
 
         for (Configuration.Item item : configuration.hosts.items) {
             if (item.state == STATE_IGNORE) {
-                addDone(item);
                 continue;
             }
 
@@ -125,7 +122,7 @@ public class RuleDatabaseUpdateTask extends AsyncTask<Void, Void, Void> {
         }
 
         if (notificationBuilder != null) {
-            notificationBuilder.setProgress(configuration.hosts.items.size(), configuration.hosts.items.size() - pending.size(), false);
+            notificationBuilder.setProgress(pending.size(), done.size(), false);
             notificationBuilder.setStyle(new Notification.BigTextStyle().bigText(builder.toString()));
             notificationBuilder.setContentText("Updating host files");
             notificationManager.notify(UPDATE_NOTIFICATION_ID, notificationBuilder.build());
@@ -180,6 +177,16 @@ public class RuleDatabaseUpdateTask extends AsyncTask<Void, Void, Void> {
     synchronized void addDone(Configuration.Item item) {
         Log.d(TAG, "done: " + item.title);
         pending.remove(item.title);
+        done.add(item.title);
+        updateProgressNotification();
+    }
+
+    /**
+     * Adds an item to the notification
+     * @param item The item currently being processed.
+     */
+    synchronized void addBegin(Configuration.Item item) {
+        pending.add(item.title);
         updateProgressNotification();
     }
 }

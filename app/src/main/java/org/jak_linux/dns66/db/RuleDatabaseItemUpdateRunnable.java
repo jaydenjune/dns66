@@ -53,17 +53,6 @@ class RuleDatabaseItemUpdateRunnable implements Runnable {
     @Override
     public void run() {
         try {
-            runNoDone();
-        } finally {
-            parentTask.addDone(item);
-        }
-    }
-
-    /**
-     * Runs an item without marking it as done afterwards.
-     */
-    private void runNoDone() {
-        try {
             android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_BACKGROUND);
         } catch (UnsatisfiedLinkError e) {
         }
@@ -85,7 +74,6 @@ class RuleDatabaseItemUpdateRunnable implements Runnable {
             return;
         }
 
-
         final URL url;
         try {
             url = new URL(item.location);
@@ -96,6 +84,7 @@ class RuleDatabaseItemUpdateRunnable implements Runnable {
 
         SingleWriterMultipleReaderFile singleWriterMultipleReaderFile = new SingleWriterMultipleReaderFile(file);
         HttpURLConnection connection = null;
+        parentTask.addBegin(item);
         try {
             connection = getHttpURLConnection(file, singleWriterMultipleReaderFile, url);
 
@@ -105,6 +94,7 @@ class RuleDatabaseItemUpdateRunnable implements Runnable {
         } catch (IOException e) {
             parentTask.addError(item, e.getLocalizedMessage());
         } finally {
+            parentTask.addDone(item);
             if (connection != null)
                 connection.disconnect();
         }
