@@ -29,8 +29,8 @@ import java.io.OutputStream;
  */
 public class SingleWriterMultipleReaderFile {
 
-    private final File activeFile;
-    private final File workFile;
+    File activeFile;
+    File workFile;
 
     public SingleWriterMultipleReaderFile(File file) {
         activeFile = file.getAbsoluteFile();
@@ -66,11 +66,14 @@ public class SingleWriterMultipleReaderFile {
     public void finishWrite(FileOutputStream stream) throws IOException {
         try {
             stream.close();
-
-            if (!workFile.renameTo(activeFile))
-                throw new IOException("Cannot commit transaction");
         } catch (IOException e) {
             failWrite(stream);
+            throw e;
+        }
+
+        if (!workFile.renameTo(activeFile)) {
+            failWrite(stream);
+            throw new IOException("Cannot commit transaction");
         }
     }
 
