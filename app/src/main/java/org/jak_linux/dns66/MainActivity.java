@@ -18,16 +18,23 @@ import android.content.IntentFilter;
 import android.net.Uri;
 import android.os.AsyncTask;
 import android.os.Bundle;
+import android.support.annotation.NonNull;
+import android.support.annotation.Nullable;
 import android.support.v4.content.ContextCompat;
 import android.support.v4.content.LocalBroadcastManager;
 import android.support.v4.view.ViewPager;
 import android.support.v7.app.AppCompatActivity;
 import android.support.v7.widget.Toolbar;
+import android.system.ErrnoException;
+import android.text.Html;
 import android.util.JsonReader;
 import android.util.JsonWriter;
 import android.util.Log;
 import android.view.Menu;
 import android.view.MenuItem;
+import android.view.View;
+import android.view.ViewGroup;
+import android.widget.ArrayAdapter;
 import android.widget.ImageView;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -43,6 +50,7 @@ import org.jak_linux.dns66.vpn.AdVpnService;
 import java.io.File;
 import java.io.InputStreamReader;
 import java.io.OutputStreamWriter;
+import java.util.List;
 
 public class MainActivity extends AppCompatActivity {
     private static final int REQUEST_FILE_OPEN = 1;
@@ -184,8 +192,42 @@ public class MainActivity extends AppCompatActivity {
         return super.onOptionsItemSelected(item);
     }
 
+    @Override
+    protected void onNewIntent(Intent intent) {
+        Log.d("MainActivity", "onNewIntent: Wee");
+
+        List<String> errors = RuleDatabaseUpdateTask.lastErrors.getAndSet(null);
+        if (errors != null && !errors.isEmpty()) {
+            Log.d("MainActivity", "onNewIntent: It's an error");
+            new AlertDialog.Builder(this)
+                    .setAdapter(newAdapter(errors), null)
+                    .setTitle(R.string.update_incomplete)
+                    .setPositiveButton(android.R.string.ok, null)
+                    .show();
+        }
+        super.onNewIntent(intent);
+
+    }
+
+    @NonNull
+    private ArrayAdapter<String> newAdapter(final List<String> errors) {
+        return new ArrayAdapter<String>(this, android.R.layout.simple_list_item_1, errors) {
+            @NonNull
+            @Override
+            @SuppressWarnings("deprecation")
+            public View getView(int position, @Nullable View convertView, @NonNull ViewGroup parent) {
+                View view = super.getView(position, convertView, parent);
+                TextView text1 = (TextView) view.findViewById(android.R.id.text1);
+                //noinspection deprecation
+                text1.setText(Html.fromHtml(errors.get(position)));
+                return view;
+            }
+        };
+    }
+
+
     private void refresh() {
-        final RuleDatabaseUpdateTask task = new RuleDatabaseUpdateTask(this, config);
+        final RuleDatabaseUpdateTask task = new RuleDatabaseUpdateTask(getApplicationContext(), config, true);
 
 
         task.execute();
@@ -252,6 +294,16 @@ public class MainActivity extends AppCompatActivity {
     @Override
     protected void onResume() {
         super.onResume();
+        List<String> errors = RuleDatabaseUpdateTask.lastErrors.getAndSet(null);
+        if (errors != null && !errors.isEmpty()) {
+            Log.d("MainActivity", "onNewIntent: It's an error");
+            new AlertDialog.Builder(this)
+                    .setAdapter(newAdapter(errors), null)
+                    .setTitle(R.string.update_incomplete)
+                    .setPositiveButton(android.R.string.ok, null)
+                    .show();
+        }
+
         updateStatus(AdVpnService.vpnStatus);
         LocalBroadcastManager.getInstance(this)
                 .registerReceiver(vpnServiceBroadcastReceiver, new IntentFilter(AdVpnService.VPN_UPDATE_STATUS_INTENT));

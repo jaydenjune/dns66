@@ -147,7 +147,7 @@ public class AdVpnService extends VpnService implements Handler.Callback {
         if (FileHelper.loadCurrentSettings(getApplicationContext()).showNotification)
             startForeground(10, notificationBuilder.build());
 
-        Intent intent = new Intent(VPN_UPDATE_STATUS_INTENT);
+        Intent intent = new Intent( );
         intent.putExtra(VPN_UPDATE_STATUS_EXTRA, status);
         LocalBroadcastManager.getInstance(this).sendBroadcast(intent);
     }

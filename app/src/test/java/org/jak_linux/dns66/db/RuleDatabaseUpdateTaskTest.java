@@ -1,6 +1,5 @@
 package org.jak_linux.dns66.db;
 
-import android.app.Activity;
 import android.content.Context;
 import android.content.res.Resources;
 import android.util.AtomicFile;
@@ -30,14 +29,10 @@ import static org.junit.Assert.*;
 import static org.mockito.Matchers.*;
 import static org.powermock.api.mockito.PowerMockito.*;
 
-/**
- * Created by jak on 07/04/17.
- */
 @RunWith(PowerMockRunner.class)
 @PrepareForTest({Log.class})
 public class RuleDatabaseUpdateTaskTest {
     private Context mockContext;
-    private Activity mockActivity;
     private File file;
     private AtomicFile atomicFile;
     private HttpURLConnection connection;
@@ -50,7 +45,6 @@ public class RuleDatabaseUpdateTaskTest {
         mockStatic(Log.class);
 
         mockContext = mock(Context.class);
-        mockActivity = mock(Activity.class);
         file = mock(File.class);
         atomicFile = mock(AtomicFile.class);
         connection = mock(HttpURLConnection.class);
@@ -67,25 +61,6 @@ public class RuleDatabaseUpdateTaskTest {
     }
 
     @Test
-    @PrepareForTest({Log.class, RuleDatabaseUpdateTask.CancelTaskProgressDialog.class, RuleDatabaseUpdateTask.class})
-    public void testConstructor() throws Exception {
-        RuleDatabaseUpdateTask ctxTask = new RuleDatabaseUpdateTask(mockContext, null);
-
-        assertNull(ctxTask.progressDialog);
-
-        Configuration configuration = new Configuration();
-        configuration.hosts = new Configuration.Hosts();
-        configuration.hosts.items = new ArrayList<>();
-        RuleDatabaseUpdateTask.CancelTaskProgressDialog dlg = mock(RuleDatabaseUpdateTask.CancelTaskProgressDialog.class);
-        mockStatic(RuleDatabaseUpdateTask.CancelTaskProgressDialog.class);
-        whenNew(RuleDatabaseUpdateTask.CancelTaskProgressDialog.class).withNoArguments().thenReturn(dlg);
-        whenNew(RuleDatabaseUpdateTask.CancelTaskProgressDialog.class).withAnyArguments().thenReturn(dlg);
-        RuleDatabaseUpdateTask actTask = new RuleDatabaseUpdateTask(mockActivity, configuration);
-
-        assertSame(dlg, actTask.progressDialog);
-    }
-
-    @Test
     public void testDoInBackground() throws Exception {
         RuleDatabaseUpdateTask task = mock(RuleDatabaseUpdateTask.class);
 
@@ -95,6 +70,7 @@ public class RuleDatabaseUpdateTaskTest {
 
         task.context = mockContext;
         task.errors = new ArrayList<>();
+        task.pending = new ArrayList<>();
         task.configuration = new Configuration();
         task.configuration.hosts = new Configuration.Hosts();
         task.configuration.hosts.items.add(new Configuration.Item());
@@ -136,13 +112,13 @@ public class RuleDatabaseUpdateTaskTest {
         task.doInBackground();
         assertEquals(2, downloadExceptionCount.numCalls);
         assertEquals(2, task.errors.size());
-        assertTrue("http-title in" + task.errors.get(0), task.errors.get(0).matches(".*http-title.*"));
-        assertTrue("https-title in" + task.errors.get(1), task.errors.get(1).matches(".*https-title.*"));
+        assertTrue("http-title in" + task.errors.get(0) + " or " + task.errors.get(1), task.errors.get(0).matches(".*http-title.*") || task.errors.get(1).matches(".*http-title.*"));
+        assertTrue("https-title in" + task.errors.get(1) + " or " + task.errors.get(1), task.errors.get(0).matches(".*https-title.*") || task.errors.get(1).matches(".*https-title.*"));
     }
 
     @Test
     public void testValidateResponse() throws Exception {
-        RuleDatabaseUpdateTask task = new RuleDatabaseUpdateTask(mockContext, null);
+        RuleDatabaseUpdateTask task = new RuleDatabaseUpdateTask(mockContext, null, false);
 
         Resources resources = mock(Resources.class);
         when(mockContext.getResources()).thenReturn(resources);
@@ -163,7 +139,7 @@ public class RuleDatabaseUpdateTaskTest {
 
     @Test
     public void testDownloadFile() throws Exception {
-        RuleDatabaseUpdateTask task = new RuleDatabaseUpdateTask(mockContext, null);
+        RuleDatabaseUpdateTask task = new RuleDatabaseUpdateTask(mockContext, null, false);
 
         byte[] bar = new byte[]{'h', 'a', 'l', 'l', 'o'};
         final ByteArrayInputStream bis = new ByteArrayInputStream(bar);
@@ -196,7 +172,7 @@ public class RuleDatabaseUpdateTaskTest {
 
     @Test
     public void testDownloadFile_exception() throws Exception {
-        RuleDatabaseUpdateTask task = new RuleDatabaseUpdateTask(mockContext, null);
+        RuleDatabaseUpdateTask task = new RuleDatabaseUpdateTask(mockContext, null, false);
         FileOutputStream fos = mock(FileOutputStream.class);
         InputStream is = mock(InputStream.class);
 
@@ -217,9 +193,9 @@ public class RuleDatabaseUpdateTaskTest {
     @Test
     public void testDownloadFile_lastModifiedFail() throws Exception {
         CountingAnswer debugAnswer = new CountingAnswer(null);
-        CountingAnswer setlastModifiedAnswerTrue = new CountingAnswer(true);
-        CountingAnswer setlastModifiedAnswerFalse = new CountingAnswer(false);
-        RuleDatabaseUpdateTask task = new RuleDatabaseUpdateTask(mockContext, null);
+        CountingAnswer setLastModifiedAnswerTrue = new CountingAnswer(true);
+        CountingAnswer setLastModifiedAnswerFalse = new CountingAnswer(false);
+        RuleDatabaseUpdateTask task = new RuleDatabaseUpdateTask(mockContext, null, false);
         FileOutputStream fos = mock(FileOutputStream.class);
         InputStream is = mock(InputStream.class);
 
@@ -229,8 +205,8 @@ public class RuleDatabaseUpdateTaskTest {
         when(Log.d(anyString(), anyString())).then(debugAnswer);
 
         // Scenario 0: Connection has no last modified & we cannot set (0, 0)
-        when(connection.getLastModified()).thenReturn(0l);
-        when(file.setLastModified(anyLong())).then(setlastModifiedAnswerFalse);
+        when(connection.getLastModified()).thenReturn(0L);
+        when(file.setLastModified(anyLong())).then(setLastModifiedAnswerFalse);
 
         task.downloadFile(file, atomicFile, connection);
 
@@ -239,8 +215,8 @@ public class RuleDatabaseUpdateTaskTest {
         assertEquals(1, finishAnswer.numCalls);
 
         // Scenario 1: Connect has no last modified & we can set (0, 1);
-        when(connection.getLastModified()).thenReturn(0l);
-        when(file.setLastModified(anyLong())).then(setlastModifiedAnswerTrue);
+        when(connection.getLastModified()).thenReturn(0L);
+        when(file.setLastModified(anyLong())).then(setLastModifiedAnswerTrue);
 
         task.downloadFile(file, atomicFile, connection);
 
@@ -249,8 +225,8 @@ public class RuleDatabaseUpdateTaskTest {
         assertEquals(2, finishAnswer.numCalls);
 
         // Scenario 2: Connect has last modified & we cannot set (1, 0);
-        when(connection.getLastModified()).thenReturn(1l);
-        when(file.setLastModified(anyLong())).then(setlastModifiedAnswerFalse);
+        when(connection.getLastModified()).thenReturn(1L);
+        when(file.setLastModified(anyLong())).then(setLastModifiedAnswerFalse);
 
         task.downloadFile(file, atomicFile, connection);
 
@@ -259,8 +235,8 @@ public class RuleDatabaseUpdateTaskTest {
         assertEquals(3, finishAnswer.numCalls);
 
         // Scenario 4: Connect has last modified & we cannot set (1, 1);
-        when(connection.getLastModified()).thenReturn(1l);
-        when(file.setLastModified(anyLong())).then(setlastModifiedAnswerTrue);
+        when(connection.getLastModified()).thenReturn(1L);
+        when(file.setLastModified(anyLong())).then(setLastModifiedAnswerTrue);
 
         task.downloadFile(file, atomicFile, connection);
 
@@ -271,7 +247,7 @@ public class RuleDatabaseUpdateTaskTest {
 
     @Test
     public void testCopyStream() throws Exception {
-        RuleDatabaseUpdateTask task = new RuleDatabaseUpdateTask(mockContext, null);
+        RuleDatabaseUpdateTask task = new RuleDatabaseUpdateTask(mockContext, null, false);
 
         byte[] bar = new byte[]{'h', 'a', 'l', 'l', 'o'};
         ByteArrayInputStream bis = new ByteArrayInputStream(bar);
@@ -284,7 +260,7 @@ public class RuleDatabaseUpdateTaskTest {
     @Test
     @PrepareForTest({Log.class, RuleDatabaseUpdateTask.class})
     public void testGetHttpURLConnection() throws Exception {
-        RuleDatabaseUpdateTask task = new RuleDatabaseUpdateTask(mockContext, null);
+        RuleDatabaseUpdateTask task = new RuleDatabaseUpdateTask(mockContext, null, false);
 
         when(atomicFile.openRead()).thenReturn(mock(FileInputStream.class));
 
@@ -292,15 +268,15 @@ public class RuleDatabaseUpdateTaskTest {
 
         // Setting modified.
         CountingAnswer setIfModifiedAnswer = new CountingAnswer(null);
-        when(file.lastModified()).thenReturn(42l);
-        when(connection, "setIfModifiedSince", eq(42l)).then(setIfModifiedAnswer);
+        when(file.lastModified()).thenReturn(42L);
+        when(connection, "setIfModifiedSince", eq(42L)).then(setIfModifiedAnswer);
 
         assertSame(connection, task.getHttpURLConnection(file, atomicFile, url));
         assertEquals(1, setIfModifiedAnswer.numCalls);
 
         // If we do not have a last modified value, do not set if-modified-since.
         setIfModifiedAnswer.numCalls = 0;
-        when(file.lastModified()).thenReturn(0l);
+        when(file.lastModified()).thenReturn(0L);
 
         assertSame(connection, task.getHttpURLConnection(file, atomicFile, url));
         assertEquals(0, setIfModifiedAnswer.numCalls);
@@ -311,7 +287,7 @@ public class RuleDatabaseUpdateTaskTest {
         private final Object result;
         private int numCalls;
 
-        public CountingAnswer(Object result) {
+        CountingAnswer(Object result) {
             this.result = result;
             this.numCalls = 0;
         }

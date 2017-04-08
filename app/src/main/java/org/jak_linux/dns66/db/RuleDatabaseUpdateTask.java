@@ -7,25 +7,20 @@
  */
 package org.jak_linux.dns66.db;
 
-import android.app.Activity;
-import android.app.AlertDialog;
-import android.app.ProgressDialog;
+import android.app.Notification;
+import android.app.NotificationManager;
+import android.app.PendingIntent;
 import android.content.Context;
 import android.content.Intent;
 import android.net.Uri;
 import android.os.AsyncTask;
 import android.support.annotation.NonNull;
-import android.support.annotation.Nullable;
-import android.text.Html;
 import android.util.AtomicFile;
 import android.util.Log;
-import android.view.View;
-import android.view.ViewGroup;
-import android.widget.ArrayAdapter;
-import android.widget.TextView;
 
 import org.jak_linux.dns66.Configuration;
 import org.jak_linux.dns66.FileHelper;
+import org.jak_linux.dns66.MainActivity;
 import org.jak_linux.dns66.R;
 
 import java.io.File;
@@ -38,6 +33,13 @@ import java.net.MalformedURLException;
 import java.net.URL;
 import java.util.ArrayList;
 import java.util.Date;
+import java.util.List;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
+
+import static org.jak_linux.dns66.Configuration.Item.STATE_IGNORE;
 
 /**
  * Asynchronous task to update the database.
@@ -49,81 +51,153 @@ public class RuleDatabaseUpdateTask extends AsyncTask<Void, String, Void> {
 
     public static final int CONNECT_TIMEOUT_MILLIS = 5000;
     public static final int READ_TIMEOUT_MILLIS = 5000;
+    public static final AtomicReference<List<String>> lastErrors = new AtomicReference<>(null);
     private static final String TAG = "RuleDatabaseUpdateTask";
+    private static final int UPDATE_NOTIFICATION_ID = 42;
     Context context;
-    ProgressDialog progressDialog;
+    NotificationManager notificationManager;
+    Notification.Builder notificationBuilder;
     Configuration configuration;
     ArrayList<String> errors = new ArrayList<>();
+    List<String> pending = new ArrayList<>();
 
-    public RuleDatabaseUpdateTask(Context context, Configuration configuration) {
+    public RuleDatabaseUpdateTask(Context context, Configuration configuration, boolean notifications) {
         Log.d(TAG, "RuleDatabaseUpdateTask: Begin");
         this.context = context;
         this.configuration = configuration;
 
-        this.progressDialog = setupProgressDialog();
+        if (notifications)
+            setupNotificationBuilder();
+
         Log.d(TAG, "RuleDatabaseUpdateTask: Setup");
     }
 
-    private ProgressDialog setupProgressDialog() {
-        if (!(context instanceof Activity))
-            return null;
+    private void setupNotificationBuilder() {
+        notificationManager =
+                (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
+        notificationBuilder = new Notification.Builder(context);
+        notificationBuilder.setContentTitle(context.getString(R.string.updating_hostfiles))
+                .setContentText(context.getString(R.string.updating_hostfiles))
+                .setSmallIcon(R.drawable.ic_refresh);
 
-        ProgressDialog progressDialog = new CancelTaskProgressDialog();
-        progressDialog.setProgressStyle(ProgressDialog.STYLE_HORIZONTAL);
-        progressDialog.setMax(configuration.hosts.items.size());
-        progressDialog.setProgress(0);
-        progressDialog.setTitle(context.getString(R.string.updating_hostfiles));
-        progressDialog.setMessage(context.getString(R.string.updating_hostfiles));
-        progressDialog.setIndeterminate(false);
-        progressDialog.show();
-
-        return progressDialog;
+        notificationBuilder.setProgress(configuration.hosts.items.size(), 0, false);
     }
 
     @Override
-    protected Void doInBackground(Void... configurations) {
+    protected Void doInBackground(final Void... configurations) {
         Log.d(TAG, "doInBackground: begin");
-        for (Configuration.Item item : configuration.hosts.items) {
-            publishProgress(item.title);
+        long start = System.currentTimeMillis();
+        ExecutorService executor = Executors.newCachedThreadPool();
+        for (final Configuration.Item item : configuration.hosts.items) {
+            pending.add(item.title);
+        }
+        setProgressMessage();
+
+        for (final Configuration.Item item : configuration.hosts.items) {
+
             if (this.isCancelled())
                 break;
+            if (item.state == STATE_IGNORE) {
+                synchronized (RuleDatabaseUpdateTask.this) {
+                    publishProgress(item.title);
+                }
+                continue;
+            }
 
             if (item.location.startsWith("content:/")) {
                 try {
                     context.getContentResolver().takePersistableUriPermission(Uri.parse(item.location), Intent.FLAG_GRANT_READ_URI_PERMISSION);
                 } catch (SecurityException e) {
                     Log.d(TAG, "doInBackground: Error taking permission: ", e);
-                    errors.add(String.format("<b>%s</b><br>%s", item.title, "Permission denied"));
+                    synchronized (errors) {
+                        errors.add(String.format("<b>%s</b><br>%s", item.title, "Permission denied"));
+                    }
+                }
+                synchronized (RuleDatabaseUpdateTask.this) {
+                    publishProgress(item.title);
                 }
                 continue;
             }
 
-            File file = FileHelper.getItemFile(context, item);
-            if (file == null || !item.isDownloadable())
+            final File file = FileHelper.getItemFile(context, item);
+            if (file == null || !item.isDownloadable()) {
+                synchronized (RuleDatabaseUpdateTask.this) {
+                    publishProgress(item.title);
+                }
                 continue;
+            }
 
-            AtomicFile atomicFile = new AtomicFile(file);
-            URL url;
+            final URL url;
             try {
                 url = new URL(item.location);
             } catch (MalformedURLException e) {
                 Log.d(TAG, "doInBackground: Invalid URL: " + e, e);
-                errors.add(String.format("<b>%s</b><br>%s", item.title, "Invalid URL"));
+                synchronized (errors) {
+                    errors.add(String.format("<b>%s</b><br>%s", item.title, "Invalid URL"));
+                }
+                synchronized (RuleDatabaseUpdateTask.this) {
+                    publishProgress(item.title);
+                }
                 continue;
             }
 
-            try {
-                HttpURLConnection connection = getHttpURLConnection(file, atomicFile, url);
+            executor.execute(new Runnable() {
 
-                if (!validateResponse(item, connection))
-                    continue;
-                downloadFile(file, atomicFile, connection);
-            } catch (IOException e) {
-                Log.d(TAG, "doInBackground: Exception", e);
-                errors.add(String.format("<b>%s</b><br>Exception: %s", item.title, e.getLocalizedMessage()));
+                @Override
+                public void run() {
+                    try {
+                        android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_BACKGROUND);
+                    } catch (UnsatisfiedLinkError e) {
+                    }
+
+                    AtomicFile atomicFile = new AtomicFile(file);
+
+
+                    long startThis = System.currentTimeMillis();
+                    long connectTime = 0;
+                    HttpURLConnection connection = null;
+                    try {
+                        long a = System.currentTimeMillis();
+                        connection = getHttpURLConnection(file, atomicFile, url);
+                        long b = System.currentTimeMillis();
+                        connectTime = b - a;
+
+
+                        if (!validateResponse(item, connection))
+                            return;
+                        downloadFile(file, atomicFile, connection);
+                    } catch (IOException e) {
+                        Log.d(TAG, "doInBackground: Exception", e);
+                        synchronized (errors) {
+                            errors.add(String.format("<b>%s</b><br>Exception: %s", item.title, e.getLocalizedMessage()));
+                        }
+                    } finally {
+                        long endThis = System.currentTimeMillis();
+                        Log.d(TAG, String.format("doInBackground: run: %d (connect=%d) in %s", (endThis - startThis), connectTime, item.title));
+                        synchronized (RuleDatabaseUpdateTask.this) {
+                            publishProgress(item.title);
+                        }
+                        if (connection != null)
+                            connection.disconnect();
+                    }
+                }
+            });
+
+        }
+
+        executor.shutdown();
+        while (true) {
+            try {
+                if (executor.awaitTermination(10, TimeUnit.SECONDS))
+                    break;
+
+                Log.d(TAG, "doInBackground: Waiting for completion");
+            } catch (InterruptedException e) {
+                continue;
             }
         }
-        Log.d(TAG, "doInBackground: end");
+        long end = System.currentTimeMillis();
+        Log.d(TAG, "doInBackground: end after " + (end - start) + "milliseconds");
 
         return null;
     }
@@ -135,7 +209,9 @@ public class RuleDatabaseUpdateTask extends AsyncTask<Void, String, Void> {
 
             if (connection.getResponseCode() != 304) {
                 context.getResources().getString(R.string.host_update_error_item);
-                errors.add("<b>" + item.title + "</b><br>" + context.getResources().getString(R.string.host_update_error_item, connection.getResponseCode(), connection.getResponseMessage()));
+                synchronized (errors) {
+                    errors.add("<b>" + item.title + "</b><br>" + context.getResources().getString(R.string.host_update_error_item, connection.getResponseCode(), connection.getResponseMessage()));
+                }
             }
             return false;
         }
@@ -188,9 +264,24 @@ public class RuleDatabaseUpdateTask extends AsyncTask<Void, String, Void> {
     @Override
     protected void onProgressUpdate(String... values) {
         super.onProgressUpdate(values);
-        if (progressDialog != null) {
-            progressDialog.incrementProgressBy(1);
-            progressDialog.setMessage(values[0]);
+
+        pending.remove(values[0]);
+        setProgressMessage();
+    }
+
+    private synchronized void setProgressMessage() {
+        StringBuilder builder = new StringBuilder();
+        for (String p : pending) {
+            if (builder.length() > 0)
+                builder.append("\n");
+            builder.append(p);
+        }
+
+        if (notificationBuilder != null) {
+            notificationBuilder.setProgress(configuration.hosts.items.size(), configuration.hosts.items.size() - pending.size(), false);
+            notificationBuilder.setStyle(new Notification.BigTextStyle().bigText(builder.toString()));
+            notificationBuilder.setContentText("Updating host files");
+            notificationManager.notify(UPDATE_NOTIFICATION_ID, notificationBuilder.build());
         }
     }
 
@@ -198,55 +289,43 @@ public class RuleDatabaseUpdateTask extends AsyncTask<Void, String, Void> {
     protected void onPostExecute(Void aVoid) {
         super.onPostExecute(aVoid);
 
-        if (progressDialog != null)
-            progressDialog.dismiss();
-
         showErrors();
-    }
-
-    @NonNull
-    private ArrayAdapter<String> newAdapter() {
-        return new ArrayAdapter<String>(context, android.R.layout.simple_list_item_1, errors) {
-            @NonNull
-            @Override
-            @SuppressWarnings("deprecation")
-            public View getView(int position, @Nullable View convertView, @NonNull ViewGroup parent) {
-                View view = super.getView(position, convertView, parent);
-                TextView text1 = (TextView) view.findViewById(android.R.id.text1);
-                //noinspection deprecation
-                text1.setText(Html.fromHtml(errors.get(position)));
-                return view;
-            }
-        };
     }
 
     @Override
     protected void onCancelled() {
         super.onCancelled();
-        if (progressDialog != null)
-            progressDialog.dismiss();
-
         showErrors();
     }
 
     private void showErrors() {
-        if (context instanceof Activity && !errors.isEmpty())
-            new AlertDialog.Builder(context)
-                    .setAdapter(newAdapter(), null)
-                    .setTitle(R.string.update_incomplete)
-                    .setPositiveButton(android.R.string.ok, null)
-                    .show();
-    }
+        if (notificationBuilder != null) {
+            if (errors.isEmpty()) {
+                notificationManager.cancel(UPDATE_NOTIFICATION_ID);
+            } else {
+                notificationBuilder.setProgress(0, 0, false);
+                notificationBuilder.setContentText("Could not update all hosts");
+                notificationBuilder.setSmallIcon(R.drawable.ic_warning);
 
-    class CancelTaskProgressDialog extends ProgressDialog {
-        CancelTaskProgressDialog() {
-            super(RuleDatabaseUpdateTask.this.context);
-        }
 
-        @Override
-        protected void onStop() {
-            RuleDatabaseUpdateTask.this.cancel(true);
-            super.onStop();
+                Intent intent = new Intent(context, MainActivity.class);
+                intent.addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP);
+
+                lastErrors.set(errors);
+                PendingIntent pendingIntent = PendingIntent.getActivity(context, 0,
+                        intent, PendingIntent.FLAG_ONE_SHOT);
+
+                try {
+                    pendingIntent.send();
+                } catch (PendingIntent.CanceledException e) {
+                    e.printStackTrace();
+                }
+
+                notificationBuilder.setContentIntent(pendingIntent);
+
+                notificationBuilder.setAutoCancel(true);
+                notificationManager.notify(UPDATE_NOTIFICATION_ID, notificationBuilder.build());
+            }
         }
     }
 }
