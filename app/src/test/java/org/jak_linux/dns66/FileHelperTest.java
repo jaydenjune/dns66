@@ -97,6 +97,14 @@ public class FileHelperTest {
     }
 
     @Test
+    public void testOpenItemFile() throws Exception {
+        Configuration.Item item = new Configuration.Item();
+        // Test encoding fails
+        item.location = "hexample.com";
+        assertNull(FileHelper.openItemFile(mockContext, item));
+    }
+
+    @Test
     public void testOpenRead_existingFile() throws Exception {
         FileInputStream stream = mock(FileInputStream.class);
         when(mockContext.openFileInput(anyString())).thenReturn(stream);

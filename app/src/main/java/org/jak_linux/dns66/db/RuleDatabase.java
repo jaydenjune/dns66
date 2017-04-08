@@ -145,9 +145,7 @@ public class RuleDatabase {
         if (reader == null) {
             addHost(item, item.location);
             return;
-        }
-
-        if (reader != null) {
+        } else {
             loadReader(item, reader);
         }
     }

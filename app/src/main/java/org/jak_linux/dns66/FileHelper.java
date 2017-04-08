@@ -141,9 +141,12 @@ public final class FileHelper {
                 Log.d("FileHelper", "openItemFile: Cannot open", e);
                 throw new FileNotFoundException(e.getMessage());
             }
-        } else if (item.isDownloadable()) {
-            return new InputStreamReader(new SingleWriterMultipleReaderFile(getItemFile(context, item)).openRead());
         } else {
+            File file = getItemFile(context, item);
+            if (file == null)
+                return  null;
+            if (item.isDownloadable())
+                return new InputStreamReader(new SingleWriterMultipleReaderFile(getItemFile(context, item)).openRead());
             return new FileReader(getItemFile(context, item));
         }
     }
