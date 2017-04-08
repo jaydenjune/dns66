@@ -41,6 +41,9 @@ public class RuleDatabaseItemUpdateRunnableTest {
     private CountingAnswer finishAnswer;
     private CountingAnswer failAnswer;
     private URL url;
+    private RuleDatabaseUpdateTask realTask;
+    private RuleDatabaseUpdateTask mockTask;
+    private ContentResolver mockResolver;
 
     @Before
     public void setUp() {
@@ -52,9 +55,13 @@ public class RuleDatabaseItemUpdateRunnableTest {
         connection = mock(HttpURLConnection.class);
         finishAnswer = new CountingAnswer(null);
         failAnswer = new CountingAnswer(null);
+        realTask = new RuleDatabaseUpdateTask(mockContext, null, false);
+        mockTask = mock(RuleDatabaseUpdateTask.class);
         url = mock(URL.class);
+        mockResolver = mock(ContentResolver.class);
         try {
             when(url.openConnection()).thenReturn(connection);
+            when(mockContext.getContentResolver()).thenReturn(mockResolver);
             doAnswer(finishAnswer).when(singleWriterMultipleReaderFile, "finishWrite", any(FileOutputStream.class));
             doAnswer(failAnswer).when(singleWriterMultipleReaderFile, "failWrite", any(FileOutputStream.class));
         } catch (Exception e) {
@@ -64,41 +71,39 @@ public class RuleDatabaseItemUpdateRunnableTest {
 
     @Test
     public void testRun() throws Exception {
-        RuleDatabaseUpdateTask task = mock(RuleDatabaseUpdateTask.class);
-
         CountingAnswer downloadCount = new CountingAnswer(null);
-        when(task.doInBackground()).thenCallRealMethod();
+        when(mockTask.doInBackground()).thenCallRealMethod();
 
-        task.context = mockContext;
-        task.errors = new ArrayList<>();
-        task.done = new ArrayList<>();
-        task.pending = new ArrayList<>();
-        task.configuration = new Configuration();
-        task.configuration.hosts = new Configuration.Hosts();
-        task.configuration.hosts.items.add(new Configuration.Item());
-        task.configuration.hosts.items.add(new Configuration.Item());
-        task.configuration.hosts.items.add(new Configuration.Item());
-        task.configuration.hosts.items.add(new Configuration.Item());
-        task.configuration.hosts.items.get(0).title = "http-title";
-        task.configuration.hosts.items.get(0).location = "http://foo";
+        mockTask.context = mockContext;
+        mockTask.errors = new ArrayList<>();
+        mockTask.done = new ArrayList<>();
+        mockTask.pending = new ArrayList<>();
+        mockTask.configuration = new Configuration();
+        mockTask.configuration.hosts = new Configuration.Hosts();
+        mockTask.configuration.hosts.items.add(new Configuration.Item());
+        mockTask.configuration.hosts.items.add(new Configuration.Item());
+        mockTask.configuration.hosts.items.add(new Configuration.Item());
+        mockTask.configuration.hosts.items.add(new Configuration.Item());
+        mockTask.configuration.hosts.items.get(0).title = "http-title";
+        mockTask.configuration.hosts.items.get(0).location = "http://foo";
 
-        when(task, "addError", any(Configuration.Item.class), anyString()).thenCallRealMethod();
-        when(task, "addDone", any(Configuration.Item.class)).thenCallRealMethod();
+        when(mockTask, "addError", any(Configuration.Item.class), anyString()).thenCallRealMethod();
+        when(mockTask, "addDone", any(Configuration.Item.class)).thenCallRealMethod();
 
         RuleDatabaseItemUpdateRunnable itemUpdateRunnable = mock(RuleDatabaseItemUpdateRunnable.class);
-        itemUpdateRunnable.parentTask = task;
+        itemUpdateRunnable.parentTask = mockTask;
         itemUpdateRunnable.context = mockContext;
-        itemUpdateRunnable.item = task.configuration.hosts.items.get(0);
+        itemUpdateRunnable.item = mockTask.configuration.hosts.items.get(0);
 
         when(itemUpdateRunnable, "run").thenCallRealMethod();
-        when(task.getCommand(any(Configuration.Item.class))).thenReturn(itemUpdateRunnable);
+        when(mockTask.getCommand(any(Configuration.Item.class))).thenReturn(itemUpdateRunnable);
         when(itemUpdateRunnable, "downloadFile", any(File.class), any(SingleWriterMultipleReaderFile.class), any(HttpURLConnection.class)).then(downloadCount);
 
 
         // Scenario 1: Validate response fails
         itemUpdateRunnable.run();
         assertEquals(0, downloadCount.numCalls);
-        assertEquals(1, task.done.size());
+        assertEquals(1, mockTask.done.size());
 
         // Scenario 2: Validate response succeeds
         when(itemUpdateRunnable.validateResponse(any(HttpURLConnection.class))).thenReturn(true);
@@ -106,7 +111,7 @@ public class RuleDatabaseItemUpdateRunnableTest {
         when(itemUpdateRunnable.internalOpenHttpConnection(any(URL.class))).thenReturn(connection);
         itemUpdateRunnable.run();
         assertEquals(1, downloadCount.numCalls);
-        assertEquals(2, task.done.size());
+        assertEquals(2, mockTask.done.size());
 
         // Scenario 3: Download file throws an exception
         CountingAnswer downloadExceptionCount = new CountingAnswer(null) {
@@ -119,23 +124,19 @@ public class RuleDatabaseItemUpdateRunnableTest {
         when(itemUpdateRunnable, "downloadFile", any(File.class), any(SingleWriterMultipleReaderFile.class), any(HttpURLConnection.class)).then(downloadExceptionCount);
         itemUpdateRunnable.run();
         assertEquals(1, downloadExceptionCount.numCalls);
-        assertEquals(1, task.errors.size());
-        assertEquals(3, task.done.size());
-        assertTrue("http-title in" + task.errors.get(0), task.errors.get(0).matches(".*http-title.*"));
+        assertEquals(1, mockTask.errors.size());
+        assertEquals(3, mockTask.done.size());
+        assertTrue("http-title in" + mockTask.errors.get(0), mockTask.errors.get(0).matches(".*http-title.*"));
     }
 
     @Test
     public void testRun_content() throws Exception {
-        RuleDatabaseUpdateTask task = new RuleDatabaseUpdateTask(mockContext, null, false);
-        ContentResolver mockResolver = mock(ContentResolver.class);
-        when(mockContext.getContentResolver()).thenReturn(mockResolver);
-
         Configuration.Item item = new Configuration.Item();
         item.location = "content://foo";
         item.title = "content-uri";
 
         RuleDatabaseItemUpdateRunnable itemUpdateRunnable = mock(RuleDatabaseItemUpdateRunnable.class);
-        itemUpdateRunnable.parentTask = task;
+        itemUpdateRunnable.parentTask = realTask;
         itemUpdateRunnable.context = mockContext;
         itemUpdateRunnable.item = item;
 
@@ -147,24 +148,47 @@ public class RuleDatabaseItemUpdateRunnableTest {
         itemUpdateRunnable.run();
 
         assertEquals(0, downloadCount.numCalls);
-        assertEquals(0, task.errors.size());
-        assertEquals(0, task.done.size());
-        assertEquals(0, task.pending.size());
+        assertEquals(0, realTask.errors.size());
+        assertEquals(0, realTask.done.size());
+        assertEquals(0, realTask.pending.size());
 
         when(mockResolver, "takePersistableUriPermission", any(Uri.class), anyInt()).thenThrow(new SecurityException("FooBar"));
 
         itemUpdateRunnable.run();
 
         assertEquals(0, downloadCount.numCalls);
-        assertEquals(1, task.errors.size());
-        assertEquals(0, task.done.size());
-        assertEquals(0, task.pending.size());
+        assertEquals(1, realTask.errors.size());
+        assertEquals(0, realTask.done.size());
+        assertEquals(0, realTask.pending.size());
+    }
+
+    @Test
+    public void testRun_host() throws Exception {
+        Configuration.Item item = new Configuration.Item();
+        item.location = "example.com";
+        item.title = "host-uri";
+
+        RuleDatabaseItemUpdateRunnable itemUpdateRunnable = mock(RuleDatabaseItemUpdateRunnable.class);
+        itemUpdateRunnable.parentTask = realTask;
+        itemUpdateRunnable.context = mockContext;
+        itemUpdateRunnable.item = item;
+
+        when(itemUpdateRunnable, "run").thenCallRealMethod();
+        when(itemUpdateRunnable.parseUri(anyString())).thenReturn(mock(Uri.class));
+        CountingAnswer downloadCount = new CountingAnswer(null);
+        when(itemUpdateRunnable, "downloadFile", any(File.class), any(SingleWriterMultipleReaderFile.class), any(HttpURLConnection.class)).then(downloadCount);
+
+        itemUpdateRunnable.run();
+
+        assertEquals(0, downloadCount.numCalls);
+        assertEquals(0, realTask.errors.size());
+        assertEquals(0, realTask.done.size());
+        assertEquals(0, realTask.pending.size());
     }
 
     @Test
     public void testValidateResponse() throws Exception {
-        RuleDatabaseUpdateTask task = new RuleDatabaseUpdateTask(mockContext, null, false);
-        RuleDatabaseItemUpdateRunnable itemUpdateRunnable = new RuleDatabaseItemUpdateRunnable(task, mockContext, mock(Configuration.Item.class));
+        RuleDatabaseItemUpdateRunnable itemUpdateRunnable = new RuleDatabaseItemUpdateRunnable(realTask, mockContext, mock(Configuration.Item.class));
 
         Resources resources = mock(Resources.class);
         when(mockContext.getResources()).thenReturn(resources);
@@ -172,21 +196,20 @@ public class RuleDatabaseItemUpdateRunnableTest {
 
         when(connection.getResponseCode()).thenReturn(200);
         assertTrue("200 is OK", itemUpdateRunnable.validateResponse(connection));
-        assertEquals(0, task.errors.size());
+        assertEquals(0, realTask.errors.size());
 
         when(connection.getResponseCode()).thenReturn(404);
         assertFalse("404 is not OK", itemUpdateRunnable.validateResponse(connection));
-        assertEquals(1, task.errors.size());
+        assertEquals(1, realTask.errors.size());
 
         when(connection.getResponseCode()).thenReturn(304);
         assertFalse("304 is not OK", itemUpdateRunnable.validateResponse(connection));
-        assertEquals(1, task.errors.size());
+        assertEquals(1, realTask.errors.size());
     }
 
     @Test
     public void testDownloadFile() throws Exception {
-        RuleDatabaseUpdateTask task = new RuleDatabaseUpdateTask(mockContext, null, false);
-        RuleDatabaseItemUpdateRunnable itemUpdateRunnable = new RuleDatabaseItemUpdateRunnable(task, mockContext, mock(Configuration.Item.class));
+        RuleDatabaseItemUpdateRunnable itemUpdateRunnable = new RuleDatabaseItemUpdateRunnable(realTask, mockContext, mock(Configuration.Item.class));
 
         byte[] bar = new byte[]{'h', 'a', 'l', 'l', 'o'};
         final ByteArrayInputStream bis = new ByteArrayInputStream(bar);
@@ -219,8 +242,7 @@ public class RuleDatabaseItemUpdateRunnableTest {
 
     @Test
     public void testDownloadFile_exception() throws Exception {
-        RuleDatabaseUpdateTask task = new RuleDatabaseUpdateTask(mockContext, null, false);
-        RuleDatabaseItemUpdateRunnable itemUpdateRunnable = new RuleDatabaseItemUpdateRunnable(task, mockContext, mock(Configuration.Item.class));
+        RuleDatabaseItemUpdateRunnable itemUpdateRunnable = new RuleDatabaseItemUpdateRunnable(realTask, mockContext, mock(Configuration.Item.class));
         FileOutputStream fos = mock(FileOutputStream.class);
         InputStream is = mock(InputStream.class);
 
@@ -243,8 +265,7 @@ public class RuleDatabaseItemUpdateRunnableTest {
         CountingAnswer debugAnswer = new CountingAnswer(null);
         CountingAnswer setLastModifiedAnswerTrue = new CountingAnswer(true);
         CountingAnswer setLastModifiedAnswerFalse = new CountingAnswer(false);
-        RuleDatabaseUpdateTask task = new RuleDatabaseUpdateTask(mockContext, null, false);
-        RuleDatabaseItemUpdateRunnable itemUpdateRunnable = new RuleDatabaseItemUpdateRunnable(task, mockContext, mock(Configuration.Item.class));
+        RuleDatabaseItemUpdateRunnable itemUpdateRunnable = new RuleDatabaseItemUpdateRunnable(realTask, mockContext, mock(Configuration.Item.class));
         FileOutputStream fos = mock(FileOutputStream.class);
         InputStream is = mock(InputStream.class);
 
@@ -296,8 +317,7 @@ public class RuleDatabaseItemUpdateRunnableTest {
 
     @Test
     public void testCopyStream() throws Exception {
-        RuleDatabaseUpdateTask task = new RuleDatabaseUpdateTask(mockContext, null, false);
-        RuleDatabaseItemUpdateRunnable itemUpdateRunnable = new RuleDatabaseItemUpdateRunnable(task, mockContext, mock(Configuration.Item.class));
+        RuleDatabaseItemUpdateRunnable itemUpdateRunnable = new RuleDatabaseItemUpdateRunnable(realTask, mockContext, mock(Configuration.Item.class));
 
         byte[] bar = new byte[]{'h', 'a', 'l', 'l', 'o'};
         ByteArrayInputStream bis = new ByteArrayInputStream(bar);
@@ -310,7 +330,6 @@ public class RuleDatabaseItemUpdateRunnableTest {
     @Test
     @PrepareForTest({Log.class})
     public void testGetHttpURLConnection() throws Exception {
-        RuleDatabaseUpdateTask task = new RuleDatabaseUpdateTask(mockContext, null, false);
         RuleDatabaseItemUpdateRunnable itemUpdateRunnable = mock(RuleDatabaseItemUpdateRunnable.class);
 
         when(itemUpdateRunnable.getHttpURLConnection(any(File.class), any(SingleWriterMultipleReaderFile.class), any(URL.class))).thenCallRealMethod();
